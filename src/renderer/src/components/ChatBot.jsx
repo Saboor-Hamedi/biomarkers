@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { MessageSquare, X, Send, Bot, User } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { cn } from '../lib/utils';
 import { getSetting } from '../lib/settings';
+import { queryDeepSeek } from '../lib/deepseek';
 
-const ChatBot = () => {
+const ChatBot = ({ appState }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     { role: 'bot', text: 'Forensic AI Assistant initialized. How can I help you analyze the current neural trajectory?' }
@@ -22,16 +24,6 @@ const ChatBot = () => {
     setIsTyping(true);
     
     try {
-      // Build the history for the API
-      const apiMessages = [
-        { role: 'system', content: 'You are an expert Forensic AI Assistant integrated into a cancer biomarker neural diagnostic dashboard. You answer clinically, concisely, and with extreme precision. You analyze biomarker data (AFP, CA125, PSA) to predict cancer risk.' },
-        ...messages.filter(m => m.role !== 'system').map(m => ({ 
-          role: m.role === 'bot' ? 'assistant' : m.role, 
-          content: m.text 
-        })),
-        userMsg
-      ];
-
       const apiKey = getSetting('DEEPSEEK_API_KEY', import.meta.env.VITE_DEEPSEEK_API_KEY || '');
       
       if (!apiKey || apiKey === 'your_deepseek_api_key_here') {
@@ -40,27 +32,8 @@ const ChatBot = () => {
         return;
       }
 
-      const response = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: apiMessages,
-          temperature: 0.2,
-          max_tokens: 500
-        })
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error?.message || `DeepSeek API returned status ${response.status}`);
-      }
-
-      const data = await response.json();
-      const botReply = data.choices[0].message.content;
+      // Send the entire chat history AND the live appState to the DeepSeek reasoning engine
+      const botReply = await queryDeepSeek([...messages, userMsg], appState, apiKey);
 
       setMessages(prev => [...prev, { role: 'bot', text: botReply }]);
     } catch (error) {
@@ -120,7 +93,21 @@ const ChatBot = () => {
                 "px-3 py-2 rounded-lg text-[11px] leading-relaxed max-w-[85%]",
                 msg.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-gray-800/50 text-gray-300 border border-gray-800 rounded-tl-none whitespace-pre-wrap"
               )}>
-                {msg.text}
+                <ReactMarkdown
+                  components={{
+                    p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
+                    strong: ({node, ...props}) => <strong className={cn("font-bold", msg.role === 'user' ? "text-white" : "text-blue-400")} {...props} />,
+                    em: ({node, ...props}) => <em className={cn("italic", msg.role === 'user' ? "text-blue-100" : "text-gray-400")} {...props} />,
+                    ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2 space-y-1 marker:text-gray-600" {...props} />,
+                    ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-2 space-y-1 marker:text-gray-600" {...props} />,
+                    li: ({node, ...props}) => <li {...props} />,
+                    code: ({node, inline, ...props}) => inline 
+                      ? <code className="bg-black/50 px-1 py-0.5 rounded font-mono text-[10px]" {...props} />
+                      : <code className="block bg-black/50 p-2 rounded font-mono text-[10px] mb-2 overflow-x-auto whitespace-pre custom-scrollbar" {...props} />
+                  }}
+                >
+                  {msg.text}
+                </ReactMarkdown>
               </div>
             </div>
           ))}

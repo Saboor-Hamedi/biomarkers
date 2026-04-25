@@ -529,7 +529,7 @@ function App() {
           </div>
         </main>
       </div>
-      <ChatBot />
+      <ChatBot appState={{ activeTab, engineStatus, inputs, prediction }} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   )
