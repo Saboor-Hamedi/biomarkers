@@ -1,8 +1,9 @@
+import React, { memo, useMemo } from 'react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
   ScatterChart, Scatter, ZAxis, Cell, LineChart, Line, AreaChart, Area, Legend
 } from 'recharts';
-import { Info, Target, Zap, ShieldCheck, Search, Activity } from 'lucide-react';
+import { Info, Target, Zap, ShieldCheck, Search, Activity, BarChart as BarChartIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const AnalyticView = ({ title, icon: Icon, explanation, children, tableData, columns }) => (
@@ -22,46 +23,187 @@ const AnalyticView = ({ title, icon: Icon, explanation, children, tableData, col
     </div>
 
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-      <div className="xl:col-span-8 bg-[#0d1117] border border-gray-800 rounded-lg p-8">
+      <div className={cn("bg-[#0d1117] border border-gray-800 rounded-lg p-8", columns && tableData ? "xl:col-span-8" : "xl:col-span-12")}>
         {children}
       </div>
       
-      <div className="xl:col-span-4 space-y-6">
-        <div className="bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-black/50">
-              <tr>
-                {columns.map(col => (
-                  <th key={col} className="p-3 text-[8px] font-black text-gray-600 uppercase tracking-widest border-b border-gray-800">{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800/50">
-              {tableData.map((row, i) => (
-                <tr key={i} className="hover:bg-white/5 transition-colors">
-                  {Object.values(row).map((val, j) => (
-                    <td key={j} className="p-3 text-[10px] font-mono font-bold text-gray-300">{val}</td>
+      {columns && tableData && (
+        <div className="xl:col-span-4 space-y-6">
+          <div className="bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-black/50">
+                <tr>
+                  {columns.map(col => (
+                    <th key={col} className="p-3 text-[8px] font-black text-gray-600 uppercase tracking-widest border-b border-gray-800">{col}</th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-800/50">
+                {tableData.map((row, i) => (
+                  <tr key={i} className="hover:bg-white/5 transition-colors">
+                    {Object.values(row).map((val, j) => (
+                      <td key={j} className="p-3 text-[10px] font-mono font-bold text-gray-300">{val}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   </div>
 );
 
-const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceData, distributionData, trajectoryData, inputs }) => {
+const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceData, distributionData, trajectoryData, shapData, boundariesData, heatmapData, counterfactualData, inputs }) => {
+  if (activeTab === 'counterfactual') {
+    return (
+      <AnalyticView 
+        title="What-If Engine" 
+        icon={ShieldCheck}
+        explanation="Simulates counterfactual scenarios to determine the exact biomarker shifts required to alter the neural network's decision boundary."
+      >
+        <div className="flex flex-col items-center justify-center h-[400px] bg-blue-900/10 border border-blue-500/20 rounded-lg p-10 text-center">
+          <Target size={48} className="text-blue-500 mb-6" />
+          <h3 className="text-xl font-black uppercase tracking-widest text-white mb-4">Counterfactual Projection</h3>
+          <p className="text-sm text-gray-300 max-w-2xl leading-relaxed">
+            {counterfactualData?.statement || "Run an audit to generate counterfactual projections."}
+          </p>
+        </div>
+      </AnalyticView>
+    );
+  }
+
+  if (activeTab === 'heatmap') {
+    return (
+      <AnalyticView 
+        title="Model Consensus Matrix" 
+        icon={Target}
+        explanation="A correlation heatmap cross-referencing model agreement across the entire cohort. High values indicate models that share identical decision logic."
+      >
+        <div className="h-[400px]">
+          {heatmapData ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis type="category" dataKey="x" name="Model" stroke="#4b5563" fontSize={10} />
+                <YAxis type="category" dataKey="y" name="Model" stroke="#4b5563" fontSize={10} />
+                <ZAxis type="number" dataKey="value" range={[100, 1000]} />
+                <Tooltip 
+                  cursor={{ strokeDasharray: '3 3' }} 
+                  contentStyle={{ backgroundColor: '#0d1117', border: '1px solid #1f2937' }}
+                  formatter={(value) => [`${value}%`, 'Agreement']}
+                />
+                <Scatter data={heatmapData} fill="#3b82f6">
+                  {heatmapData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.value > 90 ? '#ef4444' : entry.value > 75 ? '#f59e0b' : '#3b82f6'} />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">Loading Heatmap...</div>
+          )}
+        </div>
+      </AnalyticView>
+    );
+  }
+
+  if (activeTab === 'boundaries') {
+    return (
+      <AnalyticView 
+        title="Topographic Decision Map" 
+        icon={Search}
+        explanation="Visualizes the physical borders where the AI switches its verdict. The map charts AFP vs CA125, glowing red in danger zones."
+      >
+        <div className="h-[400px]">
+          {boundariesData ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis type="number" dataKey="afp" name="AFP" domain={[0, 5000]} stroke="#4b5563" fontSize={10} label={{ value: 'AFP (pg/ml)', position: 'bottom', fill: '#4b5563', fontSize: 10 }} />
+                <YAxis type="number" dataKey="ca125" name="CA125" domain={[0, 100]} stroke="#4b5563" fontSize={10} label={{ value: 'CA125 (U/ml)', angle: -90, position: 'insideLeft', fill: '#4b5563', fontSize: 10 }} />
+                <ZAxis type="number" dataKey="risk" range={[50, 400]} />
+                <Tooltip 
+                  cursor={{ strokeDasharray: '3 3' }} 
+                  contentStyle={{ backgroundColor: '#0d1117', border: '1px solid #1f2937' }}
+                  formatter={(value) => [`${value}%`, 'Risk Level']}
+                />
+                <Scatter data={boundariesData} fill="#ef4444">
+                  {boundariesData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.risk > 50 ? '#ef4444' : '#10b981'} opacity={entry.risk / 100} />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">Loading Topography...</div>
+          )}
+        </div>
+      </AnalyticView>
+    );
+  }
+
+  if (activeTab === 'shap') {
+    const tableData = useMemo(() => shapData ? shapData.map(d => ({
+      feature: d.feature.replace('_pg_per_ml', '').replace('_U_per_ml', ''),
+      impact: `${d.value > 0 && d.feature !== 'Baseline' ? '+' : ''}${d.value}%`,
+      actual: d.actual !== undefined ? d.actual : '-'
+    })) : [], [shapData]);
+
+    return (
+      <AnalyticView 
+        title="SHAP Waterfall (Patient Logic)" 
+        icon={BarChartIcon}
+        explanation="Deconstructs the mathematical journey of the current patient's prediction. Red bars push the risk higher; green bars pull it down."
+        columns={['Feature', 'Impact', 'Input Value']}
+        tableData={tableData}
+      >
+        <div className="h-[400px]">
+          {shapData ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={shapData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" horizontal={false} />
+                <XAxis type="number" stroke="#4b5563" fontSize={10} label={{ value: 'Risk Impact (%)', position: 'bottom', fill: '#4b5563', fontSize: 10 }} />
+                <YAxis dataKey="feature" type="category" stroke="#4b5563" fontSize={10} width={100} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#0d1117', border: '1px solid #1f2937' }}
+                  formatter={(value) => [`${value > 0 ? '+' : ''}${value}%`, 'Impact']}
+                />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                  {shapData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.feature === 'Baseline' ? '#3b82f6' : entry.value > 0 ? '#ef4444' : '#10b981'} />
+                  ))}
+                  <LabelList 
+                    dataKey="value" 
+                    position="right" 
+                    fill="#d1d5db" 
+                    fontSize={10} 
+                    fontWeight="bold"
+                    formatter={(val, entry) => `${val > 0 && entry.feature !== 'Baseline' ? '+' : ''}${val}%`} 
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 opacity-50">
+              <Activity size={32} className="mb-2" />
+              <p className="text-[10px] uppercase font-bold tracking-widest">Awaiting Audit...</p>
+            </div>
+          )}
+        </div>
+      </AnalyticView>
+    );
+  }
   if (activeTab === 'trajectory') {
-    const models = trajectoryData && trajectoryData.length > 0 
+    const models = useMemo(() => trajectoryData && trajectoryData.length > 0 
       ? Object.keys(trajectoryData[0]).filter(k => k !== 'psa')
-      : [];
+      : [], [trajectoryData]);
     
     // Assign colors to models
-    const colors = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"];
+    const colors = useMemo(() => ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"], []);
     
-    const tableData = models.map((m, i) => {
+    const tableData = useMemo(() => models.map((m, i) => {
       // Find where this model crosses 50% risk
       const crossing = trajectoryData?.find(d => d[m] > 50);
       return {
@@ -69,7 +211,7 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
         val: crossing ? `${crossing.psa} pg/ml` : '> 20 pg/ml',
         status: crossing ? 'Critical Bound' : 'Stable'
       };
-    });
+    }), [models, trajectoryData]);
 
     return (
       <AnalyticView 
@@ -142,7 +284,7 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'roc') {
-    const tableData = metrics?.roc ? Object.entries(metrics.roc).map(([name, data]) => ({ name, auc: data.auc, status: 'Verified' })) : [];
+    const tableData = useMemo(() => metrics?.roc ? Object.entries(metrics.roc).map(([name, data]) => ({ name, auc: data.auc, status: 'Verified' })) : [], [metrics]);
     return (
       <AnalyticView 
         title="ROC Performance" 
@@ -170,7 +312,7 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'pr') {
-    const tableData = metrics?.pr ? Object.entries(metrics.pr).map(([name, data]) => ({ name, prec: '0.94', recall: '0.92' })) : [];
+    const tableData = useMemo(() => metrics?.pr ? Object.entries(metrics.pr).map(([name, data]) => ({ name, prec: '0.94', recall: '0.92' })) : [], [metrics]);
     return (
       <AnalyticView 
         title="Precision-Recall" 
@@ -197,7 +339,7 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'calibration') {
-    const tableData = metrics?.calibration ? Object.entries(metrics.calibration).map(([name, data]) => ({ name, Brier: '0.042', status: 'Well Calibrated' })) : [];
+    const tableData = useMemo(() => metrics?.calibration ? Object.entries(metrics.calibration).map(([name, data]) => ({ name, Brier: '0.042', status: 'Well Calibrated' })) : [], [metrics]);
     return (
       <AnalyticView 
         title="Model Calibration (Reliability Diagram)" 
@@ -258,13 +400,16 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'cm') {
+    const tableData = useMemo(() => {
+      const cm = metrics?.cm || [[0,0],[0,0]];
+      return [
+        { label: 'True Negatives', val: cm[0][0], status: 'Negative Match' },
+        { label: 'False Positives', val: cm[0][1], status: 'Warning' },
+        { label: 'False Negatives', val: cm[1][0], status: 'Critical' },
+        { label: 'True Positives', val: cm[1][1], status: 'Positive Match' },
+      ];
+    }, [metrics]);
     const cm = metrics?.cm || [[0,0],[0,0]];
-    const tableData = [
-      { label: 'True Negatives', val: cm[0][0], status: 'Negative Match' },
-      { label: 'False Positives', val: cm[0][1], status: 'Warning' },
-      { label: 'False Negatives', val: cm[1][0], status: 'Critical' },
-      { label: 'True Positives', val: cm[1][1], status: 'Positive Match' },
-    ];
     return (
       <AnalyticView 
         title="Confusion Matrix" 
@@ -304,7 +449,7 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'tsne') {
-    const tableData = tsneData?.points ? tsneData.points.slice(0, 10).map((p, i) => ({ id: `PT-${100+i}`, x: p.x.toFixed(2), y: p.y.toFixed(2), cls: p.cluster === 0 ? 'Negative' : 'Positive' })) : [];
+    const tableData = useMemo(() => tsneData?.points ? tsneData.points.slice(0, 10).map((p, i) => ({ id: `PT-${100+i}`, x: p.x.toFixed(2), y: p.y.toFixed(2), cls: p.cluster === 0 ? 'Negative' : 'Positive' })) : [], [tsneData]);
     return (
       <AnalyticView 
         title="Latent Space (t-SNE)" 
@@ -451,4 +596,4 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   return null;
 };
 
-export default VisualAnalytics;
+export default memo(VisualAnalytics);

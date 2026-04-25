@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState, memo } from 'react'
 import { cn } from '../lib/utils'
 import { 
   ChevronLeft, 
@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   BrainCircuit,
   Database,
-  BarChart4,
+  BarChart,
   Settings,
   Target,
   Zap,
@@ -15,7 +15,7 @@ import {
   Search
 } from 'lucide-react'
 
-const SidebarItem = ({ icon: Icon, label, active, collapsed, onClick }) => (
+const SidebarItem = memo(({ icon: Icon, label, active, collapsed, onClick }) => (
   <button
     onClick={onClick}
     className={cn(
@@ -33,9 +33,9 @@ const SidebarItem = ({ icon: Icon, label, active, collapsed, onClick }) => (
       <span className="ml-4 text-[9px] font-black uppercase tracking-[0.2em] truncate">{label}</span>
     )}
   </button>
-)
+))
 
-const Sidebar = ({ activeTab, setActiveTab }) => {
+const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
   const [collapsed, setCollapsed] = useState(false)
 
   const mainItems = [
@@ -47,12 +47,16 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
 
   const analyticItems = [
     { id: 'trajectory', label: 'Risk Trajectories', icon: Activity },
+    { id: 'shap', label: 'SHAP Breakdown', icon: BarChart },
+    { id: 'boundaries', label: 'Decision Map', icon: Search },
+    { id: 'heatmap', label: 'Model Heatmap', icon: Target },
+    { id: 'counterfactual', label: 'What-If Engine', icon: ShieldCheck },
     { id: 'roc', label: 'ROC Analysis', icon: Target },
     { id: 'pr', label: 'PR Dynamics', icon: Zap },
     { id: 'calibration', label: 'Model Calibration', icon: Target },
     { id: 'cm', label: 'Confusion Matrix', icon: ShieldCheck },
     { id: 'tsne', label: 'Latent Space', icon: Search },
-    { id: 'importance', label: 'Biomarker Influence', icon: BarChart4 },
+    { id: 'importance', label: 'Biomarker Influence', icon: BarChart },
     { id: 'distribution', label: 'Cohort Comparison', icon: Activity },
   ]
 
@@ -111,12 +115,12 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
           icon={Settings}
           label="Settings"
           collapsed={collapsed}
-          onClick={() => {}}
+          onClick={onOpenSettings}
           active={false}
         />
       </div>
     </div>
   )
-}
+})
 
 export default Sidebar

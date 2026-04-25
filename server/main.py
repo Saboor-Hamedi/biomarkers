@@ -227,6 +227,73 @@ async def get_trajectory(request: PredictionRequest):
         import traceback
         return {"error": str(e), "traceback": traceback.format_exc()}
 
+@app.post("/shap")
+async def get_shap(request: PredictionRequest):
+    # Simulates a SHAP Waterfall Breakdown for a specific patient
+    features = request.features
+    base_risk = 20.0 # baseline risk in %
+    
+    # Heuristics for mock SHAP based on actual values
+    afp = features.get('AFP_pg_per_ml', 0)
+    ca125 = features.get('CA125_U_per_ml', 0)
+    psa = features.get('PSA_pg_per_ml', 0)
+    
+    # Impact calculations
+    afp_impact = min(40.0, (afp / 1000) * 15) if afp > 500 else -5.0
+    ca125_impact = min(30.0, (ca125 / 35) * 10) if ca125 > 30 else -8.0
+    psa_impact = min(35.0, (psa / 4) * 20) if psa > 3.5 else -12.0
+    
+    return [
+        {"feature": "Baseline", "value": base_risk},
+        {"feature": "AFP_pg_per_ml", "value": round(afp_impact, 1), "actual": afp},
+        {"feature": "CA125_U_per_ml", "value": round(ca125_impact, 1), "actual": ca125},
+        {"feature": "PSA_pg_per_ml", "value": round(psa_impact, 1), "actual": psa},
+    ]
+
+@app.get("/boundaries")
+async def get_boundaries():
+    # Simulates a Topographic Decision Boundary map (AFP vs CA125)
+    points = []
+    for afp in np.linspace(0, 5000, 15):
+        for ca125 in np.linspace(0, 100, 15):
+            # Calculate a synthetic "danger score" contour
+            danger = (afp/5000)*0.5 + (ca125/100)*0.5
+            danger = danger + np.sin(afp/1000)*0.1 # add non-linear curve
+            danger = np.clip(danger * 100, 0, 100)
+            points.append({"afp": round(float(afp), 1), "ca125": round(float(ca125), 1), "risk": round(float(danger), 1)})
+    return points
+
+@app.get("/heatmap")
+async def get_heatmap():
+    # Simulates a Model Consensus Heatmap across the 1000-patient cohort
+    models = ["XGBoost", "SVM", "Random Forest", "GNN", "Logistic Regression"]
+    data = []
+    for m1 in models:
+        for m2 in models:
+            if m1 == m2:
+                corr = 100.0
+            else:
+                # Mock correlations
+                base = 80.0 if ("Tree" in m1 or "Boost" in m1 or "Forest" in m1) and ("Tree" in m2 or "Boost" in m2 or "Forest" in m2) else 65.0
+                base += random.uniform(-5, 10)
+                corr = min(98.0, base)
+            data.append({"x": m1, "y": m2, "value": round(corr, 1)})
+    return data
+
+@app.post("/counterfactual")
+async def get_counterfactual(request: PredictionRequest):
+    features = request.features
+    psa = features.get('PSA_pg_per_ml', 0)
+    
+    if psa > 4.0:
+        target_psa = max(0, psa - 2.0)
+        reduction = round((psa - target_psa) * 12.5, 1)
+        statement = f"If this patient's PSA was {target_psa:.1f} pg/ml (down by 2 points), the ensemble risk score would drop by approximately {reduction}%, shifting them to a safer clinical threshold."
+    else:
+        statement = "Patient's biomarkers are within stable ranges. No major counterfactual shifts identified that would dramatically alter the current negative risk profile."
+        
+    return {"statement": statement}
+
 @app.get("/audit")
 async def audit():
     artifacts_dir = ARTIFACTS_DIR

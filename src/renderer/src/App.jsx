@@ -7,6 +7,8 @@ import ForensicInput from './components/ForensicInput'
 import CommitteeReview from './components/CommitteeReview'
 import VisualAnalytics from './components/VisualAnalytics'
 import PatientDetailModal from './components/PatientDetailModal'
+import ChatBot from './components/ChatBot'
+import SettingsModal from './components/SettingsModal'
 import { Activity, TrendingUp, ShieldAlert, Search } from 'lucide-react'
 import { cn } from './lib/utils'
 
@@ -19,9 +21,15 @@ function App() {
   const [importanceData, setImportanceData] = useState(null)
   const [distributionData, setDistributionData] = useState(null)
   const [trajectoryData, setTrajectoryData] = useState(null)
+  const [shapData, setShapData] = useState(null)
+  const [boundariesData, setBoundariesData] = useState(null)
+  const [heatmapData, setHeatmapData] = useState(null)
+  const [counterfactualData, setCounterfactualData] = useState(null)
   const [topPatients, setTopPatients] = useState([])
   const [visibleCount, setVisibleCount] = useState(10)
   const [selectedPatient, setSelectedPatient] = useState(null)
+  const [engineStatus, setEngineStatus] = useState('waiting')
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [artifactFiles, setArtifactFiles] = useState([])
   const [loading, setLoading] = useState(false)
   const [auditHistory, setAuditHistory] = useState([])
@@ -56,20 +64,26 @@ function App() {
 
   const fetchVisuals = useCallback(async () => {
     try {
-      const [tsneRes, metricsRes, importanceRes, distRes] = await Promise.all([
+      const [tsneRes, metricsRes, importanceRes, distRes, boundRes, heatRes] = await Promise.all([
         fetch('http://127.0.0.1:8000/tsne'),
         fetch('http://127.0.0.1:8000/metrics'),
         fetch('http://127.0.0.1:8000/importance'),
-        fetch('http://127.0.0.1:8000/distributions')
+        fetch('http://127.0.0.1:8000/distributions'),
+        fetch('http://127.0.0.1:8000/boundaries'),
+        fetch('http://127.0.0.1:8000/heatmap')
       ])
       const tsne = await tsneRes.json()
       const metricsData = await metricsRes.json()
       const importance = await importanceRes.json()
       const distributions = await distRes.json()
+      const bounds = await boundRes.json()
+      const heat = await heatRes.json()
       setTsneData(tsne)
       setMetrics(metricsData)
       setImportanceData(importance)
       setDistributionData(distributions)
+      setBoundariesData(bounds)
+      setHeatmapData(heat)
     } catch (err) {
       console.error('Visuals fetch failed', err)
     }
@@ -82,7 +96,7 @@ function App() {
   }, [fetchStatus])
 
   useEffect(() => {
-    if (['trajectory', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
+    if (['trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
       fetchVisuals()
     }
   }, [activeTab, fetchVisuals])
@@ -99,15 +113,19 @@ function App() {
       if (data.error) throw new Error(data.error)
       
       try {
-        const trajResponse = await fetch('http://127.0.0.1:8000/trajectory', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ features: inputs })
-        })
-        const trajData = await trajResponse.json()
+        const [trajRes, shapRes, cfRes] = await Promise.all([
+          fetch('http://127.0.0.1:8000/trajectory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }) }),
+          fetch('http://127.0.0.1:8000/shap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }) }),
+          fetch('http://127.0.0.1:8000/counterfactual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }) })
+        ])
+        const trajData = await trajRes.json()
+        const shapDataJson = await shapRes.json()
+        const cfData = await cfRes.json()
         setTrajectoryData(trajData)
+        setShapData(shapDataJson)
+        setCounterfactualData(cfData)
       } catch (e) {
-        console.error('Trajectory fetch failed', e)
+        console.error('Advanced endpoints fetch failed', e)
       }
 
       setPrediction(data)
@@ -171,13 +189,13 @@ function App() {
   )
 
   // Analytic tabs mapping
-  const isAnalyticTab = ['trajectory', 'calibration', 'influence', 'tsne', 'distribution', 'metrics', 'roc', 'pr', 'cm', 'importance'].includes(
+  const isAnalyticTab = ['trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'influence', 'tsne', 'distribution', 'metrics', 'roc', 'pr', 'cm', 'importance'].includes(
     activeTab
   )
 
   return (
     <div className="flex h-screen bg-[#06080a] text-white overflow-hidden font-sans">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onOpenSettings={() => setIsSettingsOpen(true)} />
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
 
@@ -494,6 +512,10 @@ function App() {
                 importanceData={importanceData}
                 distributionData={distributionData}
                 trajectoryData={trajectoryData}
+                shapData={shapData}
+                boundariesData={boundariesData}
+                heatmapData={heatmapData}
+                counterfactualData={counterfactualData}
                 inputs={inputs}
               />
             )}
@@ -507,6 +529,8 @@ function App() {
           </div>
         </main>
       </div>
+      <ChatBot />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   )
 }
