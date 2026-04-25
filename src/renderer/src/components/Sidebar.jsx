@@ -41,6 +41,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
   const mainItems = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
     { id: 'committee', label: 'AI Committee', icon: BrainCircuit },
+    { id: 'ranking', label: 'Patient Ranking', icon: Activity },
     { id: 'registry', label: 'Audit Registry', icon: Database },
   ]
 

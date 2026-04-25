@@ -289,7 +289,7 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
                   <Area type="monotone" dataKey="y" stroke="#3b82f6" fillOpacity={1} fill={`url(#colorDensity-${key})`} strokeWidth={2} />
                   
                   {/* Patient Reference Marker */}
-                  {inputs[key] && (
+                  {(inputs[key] !== undefined && inputs[key] !== null) && (
                     <Area 
                       type="monotone" 
                       data={[{x: inputs[key], y: 0}, {x: inputs[key], y: Math.max(...data.map(d => d.y))}]} 

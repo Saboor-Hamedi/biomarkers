@@ -6,6 +6,7 @@ import StatCard from './components/StatCard'
 import ForensicInput from './components/ForensicInput'
 import CommitteeReview from './components/CommitteeReview'
 import VisualAnalytics from './components/VisualAnalytics'
+import PatientDetailModal from './components/PatientDetailModal'
 import { 
   Activity, 
   TrendingUp, 
@@ -22,11 +23,16 @@ function App() {
   const [metrics, setMetrics] = useState(null)
   const [importanceData, setImportanceData] = useState(null)
   const [distributionData, setDistributionData] = useState(null)
+  const [topPatients, setTopPatients] = useState([])
+  const [visibleCount, setVisibleCount] = useState(10)
+  const [selectedPatient, setSelectedPatient] = useState(null)
+  const [artifactFiles, setArtifactFiles] = useState([])
   const [loading, setLoading] = useState(false)
   const [auditHistory, setAuditHistory] = useState([])
   const [inputs, setInputs] = useState({
-    AFP_pg_per_ml: 1200,
-    CA125_U_per_ml: 30
+    AFP_pg_per_ml: 0,
+    CA125_U_per_ml: 0,
+    PSA_pg_per_ml: 0
   })
   const [resetKey, setResetKey] = useState(0)
 
@@ -36,6 +42,17 @@ function App() {
       if (!response.ok) throw new Error("Server Offline")
       const data = await response.json()
       setArtifacts(data.artifacts || [])
+      
+      // Also fetch top patients if engine is ready
+      if (data.status === 'ready') {
+        const topRes = await fetch('http://127.0.0.1:8000/top-patients')
+        const topData = await topRes.json()
+        if (Array.isArray(topData)) {
+          setTopPatients(topData)
+        } else if (topData.error) {
+          console.error("Ranking fetch failed:", topData.error)
+        }
+      }
     } catch (err) {
       console.error("Status fetch failed", err)
     }
@@ -148,7 +165,11 @@ function App() {
                 </div>
 
                 <div className="space-y-8">
-                  <ArtifactPicker key={resetKey} onSync={fetchStatus} />
+                  <ArtifactPicker 
+                    onSync={fetchStatus} 
+                    files={artifactFiles}
+                    setFiles={setArtifactFiles}
+                  />
                   <ForensicInput inputs={inputs} onInputChange={handleInputChange} onPredict={handlePredict} loading={loading} disabled={artifacts.length === 0} />
                 </div>
               </div>
@@ -172,7 +193,7 @@ function App() {
                         <div key={i} className="space-y-2 group">
                           <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
                             <span className="text-gray-300">{name}</span>
-                            <span className="text-white font-mono">{score}</span>
+                            <span className="text-white font-mono">{parseFloat(score).toFixed(2)}</span>
                           </div>
                           <div className="h-1.5 bg-black rounded-full overflow-hidden border border-gray-800 shadow-inner">
                             <div 
@@ -195,6 +216,95 @@ function App() {
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'ranking' && (
+              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <TrendingUp className="text-blue-500" size={18} />
+                    <h2 className="text-lg font-black uppercase tracking-tight italic">Patient Risk Ranking (Top 50)</h2>
+                  </div>
+                  <span className="text-[9px] bg-blue-500/10 text-blue-500 px-2 py-1 rounded border border-blue-500/20 font-black uppercase tracking-widest">Global Audit Scan</span>
+                </div>
+                <div className="bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-black/50">
+                      <tr>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 text-center w-16">Rank</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Sample ID</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">AFP</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">CA125</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">PSA</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Neural Score</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/50">
+                      {Array.isArray(topPatients) && topPatients.slice(0, visibleCount).map((pt, i) => (
+                        <tr 
+                          key={pt.id} 
+                          onClick={() => setSelectedPatient(pt)}
+                          className="hover:bg-blue-500/5 transition-colors group cursor-pointer"
+                        >
+                          <td className="p-4 text-[9px] font-mono text-gray-600 text-center">{i + 1}</td>
+                          <td className="p-4 text-[10px] font-bold text-gray-300 group-hover:text-blue-400">{pt.id}</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{pt.AFP}</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{pt.CA125}</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{pt.PSA}</td>
+                          <td className="p-4 text-[10px] font-mono font-bold text-blue-400">{pt.score}</td>
+                          <td className="p-4">
+                            <span className={cn(
+                              "text-[8px] font-black uppercase px-2 py-1 rounded-full border",
+                              pt.status === 'Urgent' ? "text-red-500 border-red-500/30 bg-red-500/10" :
+                              pt.status === 'Critical' ? "text-orange-500 border-orange-500/30 bg-orange-500/10" :
+                              pt.status === 'Moderate' ? "text-yellow-500 border-yellow-500/30 bg-yellow-500/10" :
+                              "text-green-500 border-green-500/30 bg-green-500/10"
+                            )}>
+                              {pt.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {topPatients.length === 0 && (
+                        <tr>
+                          <td colSpan="6" className="p-20 text-center text-[10px] font-bold text-gray-600 uppercase tracking-widest">
+                            {artifacts.length === 0 ? "Engine Offline: Calibrate artifacts to begin audit" : "Scanning Population Database..."}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {Array.isArray(topPatients) && topPatients.length > 0 && (
+                  <div className="flex justify-center items-center gap-12 pt-6">
+                    {visibleCount < topPatients.length && (
+                      <button 
+                        onClick={() => setVisibleCount(prev => prev + 20)}
+                        className="group flex flex-col items-center gap-2"
+                      >
+                        <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-500 group-hover:text-blue-500 transition-colors">Show More</span>
+                        <div className="w-12 h-1 bg-gray-800 rounded-full overflow-hidden">
+                          <div className="w-0 group-hover:w-full h-full bg-blue-500 transition-all duration-500" />
+                        </div>
+                      </button>
+                    )}
+                    
+                    {visibleCount > 10 && (
+                      <button 
+                        onClick={() => setVisibleCount(10)}
+                        className="group flex flex-col items-center gap-2"
+                      >
+                        <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-500 group-hover:text-red-500 transition-colors">Show Less</span>
+                        <div className="w-12 h-1 bg-gray-800 rounded-full overflow-hidden">
+                          <div className="w-0 group-hover:w-full h-full bg-red-500 transition-all duration-500" />
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -252,6 +362,13 @@ function App() {
                 importanceData={importanceData}
                 distributionData={distributionData}
                 inputs={inputs}
+              />
+            )}
+
+            {selectedPatient && (
+              <PatientDetailModal 
+                patient={selectedPatient} 
+                onClose={() => setSelectedPatient(null)} 
               />
             )}
 

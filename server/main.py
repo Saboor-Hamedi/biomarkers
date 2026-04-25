@@ -243,7 +243,7 @@ async def get_distributions():
         df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
         
         distributions = {}
-        for col in ["AFP_pg_per_ml", "CA125_U_per_ml"]:
+        for col in ["AFP_pg_per_ml", "CA125_U_per_ml", "PSA_pg_per_ml"]:
             # Generate histogram data
             counts, bin_edges = np.histogram(df[col].dropna(), bins=30)
             bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
@@ -254,6 +254,63 @@ async def get_distributions():
             ]
             
         return distributions
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/top-patients")
+async def get_top_patients():
+    try:
+        models, scaler, feature_columns = load_artifacts()
+        if not models or not scaler:
+            return {"error": "Engine offline."}
+            
+        data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
+        df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
+        
+        # Preprocessing
+        X = df[feature_columns].copy()
+        X_log = np.log1p(X)
+        X_scaled = scaler.transform(X_log)
+        
+        # Batch Prediction
+        all_probs = []
+        for name, model in models.items():
+            actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
+            if hasattr(actual_model, 'predict_proba'):
+                probs = actual_model.predict_proba(X_scaled)[:, 1]
+                all_probs.append(probs)
+            elif hasattr(actual_model, 'predict'):
+                preds = actual_model.predict(X_scaled)
+                all_probs.append(preds)
+        
+        avg_scores = np.mean(all_probs, axis=0)
+        df['risk_score'] = avg_scores
+        
+        # Sort by risk score descending
+        df_sorted = df.sort_values('risk_score', ascending=False)
+        
+        results = []
+        for _, row in df_sorted.iterrows():
+            score = row['risk_score']
+            status = "Urgent" if score > 0.8 else "Critical" if score > 0.6 else "Moderate" if score > 0.4 else "Stable"
+            
+            results.append({
+                "id": row['sample_id'],
+                "AFP": round(row['AFP_pg_per_ml'], 2),
+                "CA125": round(row['CA125_U_per_ml'], 2),
+                "PSA": round(row['PSA_pg_per_ml'], 2),
+                "score": round(float(score), 4),
+                "status": status,
+                "details": {
+                    "Raw AFP": f"{row['AFP_pg_per_ml']:.2f} pg/ml",
+                    "Raw CA125": f"{row['CA125_U_per_ml']:.2f} U/ml",
+                    "Raw PSA": f"{row['PSA_pg_per_ml']:.2f} pg/ml",
+                    "Neural Certainty": f"{(abs(score - 0.5) * 200):.1f}%",
+                    "Forensic Cluster": "Alpha-7" if score > 0.5 else "Gamma-2"
+                }
+            })
+            
+        return results
     except Exception as e:
         return {"error": str(e)}
 

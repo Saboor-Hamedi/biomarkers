@@ -32,7 +32,9 @@ const CommitteeReview = ({ artifacts, prediction }) => {
                   <CheckCircle2 size={12} className={prediction ? (model.scoreValue > 50 ? "text-red-500" : "text-green-500") : "text-gray-600"} />
                   <span className="text-[10px] font-black uppercase text-gray-300 tracking-widest">{model.name}</span>
                 </div>
-                <span className="text-[10px] font-black text-white font-mono">{model.score}</span>
+                <span className="text-[10px] font-black text-white font-mono">
+                  {model.score === '---' ? '---' : parseFloat(model.score).toFixed(2)}
+                </span>
               </div>
               <div className="h-1.5 bg-black rounded-full overflow-hidden border border-gray-800 shadow-inner">
                 <div 
