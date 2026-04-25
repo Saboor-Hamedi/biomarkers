@@ -46,8 +46,10 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
   ]
 
   const analyticItems = [
+    { id: 'trajectory', label: 'Risk Trajectories', icon: Activity },
     { id: 'roc', label: 'ROC Analysis', icon: Target },
     { id: 'pr', label: 'PR Dynamics', icon: Zap },
+    { id: 'calibration', label: 'Model Calibration', icon: Target },
     { id: 'cm', label: 'Confusion Matrix', icon: ShieldCheck },
     { id: 'tsne', label: 'Latent Space', icon: Search },
     { id: 'importance', label: 'Biomarker Influence', icon: BarChart4 },
@@ -65,7 +67,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
         {!collapsed && (
           <div className="flex items-center gap-3">
             <Activity className="text-blue-600" size={20} />
-            <span className="font-black text-white tracking-[0.3em] text-sm italic">FORENSIC</span>
+            <span className="font-black text-white tracking-[0.1em] text-sm italic">CANCER BIOMARKER</span>
           </div>
         )}
         <button 

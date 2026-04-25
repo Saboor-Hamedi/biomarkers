@@ -19,6 +19,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     show: false,
+    title: 'Cancer Biomarker AI Suite',
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {

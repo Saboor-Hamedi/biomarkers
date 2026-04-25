@@ -18,6 +18,7 @@ function App() {
   const [metrics, setMetrics] = useState(null)
   const [importanceData, setImportanceData] = useState(null)
   const [distributionData, setDistributionData] = useState(null)
+  const [trajectoryData, setTrajectoryData] = useState(null)
   const [topPatients, setTopPatients] = useState([])
   const [visibleCount, setVisibleCount] = useState(10)
   const [selectedPatient, setSelectedPatient] = useState(null)
@@ -81,7 +82,7 @@ function App() {
   }, [fetchStatus])
 
   useEffect(() => {
-    if (['roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
+    if (['trajectory', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
       fetchVisuals()
     }
   }, [activeTab, fetchVisuals])
@@ -96,6 +97,18 @@ function App() {
       })
       const data = await response.json()
       if (data.error) throw new Error(data.error)
+      
+      try {
+        const trajResponse = await fetch('http://127.0.0.1:8000/trajectory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ features: inputs })
+        })
+        const trajData = await trajResponse.json()
+        setTrajectoryData(trajData)
+      } catch (e) {
+        console.error('Trajectory fetch failed', e)
+      }
 
       setPrediction(data)
       setAuditHistory((prev) =>
@@ -158,7 +171,7 @@ function App() {
   )
 
   // Analytic tabs mapping
-  const isAnalyticTab = ['roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(
+  const isAnalyticTab = ['trajectory', 'calibration', 'influence', 'tsne', 'distribution', 'metrics', 'roc', 'pr', 'cm', 'importance'].includes(
     activeTab
   )
 
@@ -480,6 +493,7 @@ function App() {
                 metrics={metrics}
                 importanceData={importanceData}
                 distributionData={distributionData}
+                trajectoryData={trajectoryData}
                 inputs={inputs}
               />
             )}

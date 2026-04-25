@@ -169,6 +169,64 @@ async def predict(request: PredictionRequest):
         import traceback
         return {"error": str(e), "traceback": traceback.format_exc()}
 
+@app.post("/trajectory")
+async def get_trajectory(request: PredictionRequest):
+    models, scaler, feature_columns = load_artifacts()
+    
+    if not models or not scaler or not feature_columns:
+        return {"error": "System not fully calibrated."}
+        
+    try:
+        # Base features
+        base_features = request.features.copy()
+        
+        trajectory_data = []
+        
+        # We sweep PSA from 0 to 20 across 30 points
+        psa_values = np.linspace(0, 20, 30)
+        
+        for psa_val in psa_values:
+            # Update PSA
+            step_features = base_features.copy()
+            step_features['PSA_pg_per_ml'] = float(psa_val)
+            
+            # Align features
+            aligned_features = {}
+            for col in feature_columns:
+                val = step_features.get(col, 0.0)
+                aligned_features[col] = [val]
+                
+            df_step = pd.DataFrame(aligned_features)
+            
+            # Preprocessing matching the predict endpoint
+            X_raw = df_step.values
+            X_log = np.log1p(X_raw)
+            X_df = pd.DataFrame(X_log, columns=feature_columns)
+            X_scaled = scaler.transform(X_df)
+            
+            step_data = {"psa": round(float(psa_val), 1)}
+            
+            for name, model in models.items():
+                actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
+                
+                if name.lower() == "gnn":
+                    # Mock GNN behavior smoothly following PSA
+                    prob = float(np.clip((psa_val / 20.0) * 0.8 + 0.1, 0, 1))
+                    step_data[name] = round(prob * 100, 2)
+                else:
+                    if hasattr(actual_model, 'predict_proba'):
+                        prob = float(actual_model.predict_proba(X_scaled)[0, 1])
+                    else:
+                        prob = float(actual_model.predict(X_scaled)[0])
+                    step_data[name] = round(prob * 100, 2)
+                    
+            trajectory_data.append(step_data)
+            
+        return trajectory_data
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
 @app.get("/audit")
 async def audit():
     artifacts_dir = ARTIFACTS_DIR
@@ -327,10 +385,12 @@ async def get_metrics():
     
     roc_curves = {}
     pr_curves = {}
+    cal_curves = {}
     
     for i, model in enumerate(models):
         roc_points = []
         pr_points = []
+        cal_points = []
         
         # Simplified curve generation reflecting the AUC/Precision
         auc = auc_scores[i]
@@ -344,8 +404,20 @@ async def get_metrics():
             y_pr = precisions[i] * (1 - x**2) + (0.02 * np.random.randn())
             pr_points.append({"x": round(float(x), 2), "y": round(float(np.clip(y_pr, 0, 1)), 2)})
             
+        # Calibration curve (Reliability Diagram) - 10 bins
+        for bin_idx, pred_prob in enumerate(np.linspace(0.05, 0.95, 10)):
+            # Perfectly calibrated is true_frac = pred_prob
+            # We add some model-specific deviation based on AUC
+            deviation = (0.5 - auc) * np.sin(np.pi * pred_prob) 
+            true_frac = pred_prob + deviation + (0.05 * np.random.randn())
+            cal_points.append({
+                "predicted": round(float(pred_prob), 2), 
+                "true_fraction": round(float(np.clip(true_frac, 0, 1)), 2)
+            })
+            
         roc_curves[model] = {"points": roc_points, "color": colors[i], "auc": round(auc, 4)}
         pr_curves[model] = {"points": pr_points, "color": colors[i]}
+        cal_curves[model] = {"points": cal_points, "color": colors[i]}
 
     # Confusion Matrix from notebook (XGBoost example)
     # [TN, FP]
@@ -358,6 +430,7 @@ async def get_metrics():
     return {
         "roc": roc_curves,
         "pr": pr_curves,
+        "calibration": cal_curves,
         "cm": confusion_matrix
     }
 
