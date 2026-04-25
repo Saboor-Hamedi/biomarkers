@@ -224,30 +224,32 @@ function App() {
                   <CommitteeReview artifacts={artifacts} prediction={prediction} />
                   <div className="bg-[#0d1117] border border-gray-800 rounded-lg p-8">
                     <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-500 mb-8 flex items-center gap-2">
-                      <TrendingUp size={14} className="text-blue-500" />
-                      Performance Distribution
+                      <Activity size={14} className="text-blue-500" />
+                      Global Biomarker Influence
                     </h3>
                     <div className="space-y-6">
-                      {prediction?.models ? (
-                        Object.entries(prediction.models)
-                          .sort((a, b) => parseFloat(b[1]) - parseFloat(a[1]))
-                          .map(([name, score], i) => (
-                            <div key={i} className="space-y-2 group">
-                              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                                <span className="text-gray-300">{name}</span>
+                      {importanceData && !importanceData.error ? (
+                        Object.entries(
+                          Object.values(importanceData).reduce((acc, curr) => {
+                            Object.entries(curr).forEach(([k, v]) => {
+                              acc[k] = (acc[k] || 0) + v / Object.keys(importanceData).length
+                            })
+                            return acc
+                          }, {})
+                        )
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([feature, weight], i) => (
+                            <div key={i} className="space-y-2">
+                              <div className="flex justify-between text-[9px] font-black uppercase tracking-widest">
+                                <span className="text-gray-400">{feature.replace(/_/g, ' ')}</span>
                                 <span className="text-white font-mono">
-                                  {parseFloat(score).toFixed(2)}
+                                  {(weight * 100).toFixed(1)}%
                                 </span>
                               </div>
-                              <div className="h-1.5 bg-black rounded-full overflow-hidden border border-gray-800 shadow-inner">
+                              <div className="h-1 bg-gray-900 rounded-full overflow-hidden">
                                 <div
-                                  className={cn(
-                                    'h-full transition-all duration-1000 ease-out',
-                                    parseFloat(score) > 50
-                                      ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)]'
-                                      : 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
-                                  )}
-                                  style={{ width: score }}
+                                  className="h-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.4)] transition-all duration-1000"
+                                  style={{ width: `${weight * 100}%` }}
                                 />
                               </div>
                             </div>
