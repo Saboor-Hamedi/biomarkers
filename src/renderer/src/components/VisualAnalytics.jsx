@@ -1,8 +1,8 @@
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ScatterChart, Scatter, ZAxis, Cell, LineChart, Line
+  ScatterChart, Scatter, ZAxis, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
-import { Info, Target, Zap, ShieldCheck, Search } from 'lucide-react';
+import { Info, Target, Zap, ShieldCheck, Search, Activity } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const AnalyticView = ({ title, icon: Icon, explanation, children, tableData, columns }) => (
@@ -52,9 +52,9 @@ const AnalyticView = ({ title, icon: Icon, explanation, children, tableData, col
   </div>
 );
 
-const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceData }) => {
+const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceData, distributionData, inputs }) => {
   
-  if (!metrics && ['roc', 'pr', 'cm', 'importance'].includes(activeTab)) {
+  if (!metrics && ['roc', 'pr', 'cm', 'importance', 'distribution'].includes(activeTab)) {
     return (
       <div className="flex flex-col items-center justify-center h-[400px] gap-4">
         <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -214,7 +214,6 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
       Object.entries(feats).map(([feat, score]) => ({ model, feat, score: (score * 100).toFixed(1) + '%' }))
     ) : [];
 
-    // Get the first model's features for the primary chart (XGBoost usually)
     const primaryModel = importanceData?.XGBoost || (importanceData ? Object.values(importanceData)[0] : null);
     const chartData = primaryModel ? Object.entries(primaryModel).map(([name, value]) => ({ name, value })).sort((a,b) => a.value - b.value) : [];
 
@@ -243,6 +242,68 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      </AnalyticView>
+    );
+  }
+
+  if (activeTab === 'distribution') {
+    const tableData = (distributionData && !distributionData.error) ? Object.entries(distributionData)
+      .filter(([_, data]) => Array.isArray(data))
+      .map(([key, data]) => ({
+        key: key.replace(/_/g, ' '), 
+        min: data.length > 0 ? Math.min(...data.map(d => d.x)).toFixed(2) : '0.00',
+        max: data.length > 0 ? Math.max(...data.map(d => d.x)).toFixed(2) : '0.00',
+        patient: inputs[key] || 'N/A'
+      })) : [];
+
+    return (
+      <AnalyticView 
+        title="Cohort Comparison" 
+        icon={Activity}
+        explanation="Density plots show the frequency distribution of biomarkers in the study population. The pulsing marker indicates the current patient's position relative to the cohort."
+        tableData={tableData}
+        columns={['Biomarker', 'Range Min', 'Range Max', 'Patient Value']}
+      >
+        <div className="space-y-12">
+          {distributionData && !distributionData.error && Object.entries(distributionData)
+            .filter(([_, data]) => Array.isArray(data))
+            .map(([key, data]) => (
+            <div key={key} className="h-[180px] relative">
+              <div className="absolute top-0 left-0 text-[8px] font-black uppercase text-blue-500 mb-2">{key.replace(/_/g, ' ')} Density</div>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id={`colorDensity-${key}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1f2937" />
+                  <XAxis dataKey="x" type="number" stroke="#4b5563" fontSize={9} />
+                  <YAxis hide />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#000', border: '1px solid #374151' }}
+                    labelFormatter={(val) => `Value: ${val}`}
+                  />
+                  <Area type="monotone" dataKey="y" stroke="#3b82f6" fillOpacity={1} fill={`url(#colorDensity-${key})`} strokeWidth={2} />
+                  
+                  {/* Patient Reference Marker */}
+                  {inputs[key] && (
+                    <Area 
+                      type="monotone" 
+                      data={[{x: inputs[key], y: 0}, {x: inputs[key], y: Math.max(...data.map(d => d.y))}]} 
+                      dataKey="y" 
+                      stroke="#ef4444" 
+                      strokeWidth={3} 
+                      strokeDasharray="5 5"
+                      dot={{ r: 6, fill: '#ef4444', strokeWidth: 0, className: 'animate-pulse' }}
+                    />
+                  )}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ))}
         </div>
       </AnalyticView>
     );

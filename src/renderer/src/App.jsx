@@ -21,6 +21,7 @@ function App() {
   const [tsneData, setTsneData] = useState(null)
   const [metrics, setMetrics] = useState(null)
   const [importanceData, setImportanceData] = useState(null)
+  const [distributionData, setDistributionData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [auditHistory, setAuditHistory] = useState([])
   const [inputs, setInputs] = useState({
@@ -42,17 +43,20 @@ function App() {
 
   const fetchVisuals = useCallback(async () => {
     try {
-      const [tsneRes, metricsRes, importanceRes] = await Promise.all([
+      const [tsneRes, metricsRes, importanceRes, distRes] = await Promise.all([
         fetch('http://127.0.0.1:8000/tsne'),
         fetch('http://127.0.0.1:8000/metrics'),
-        fetch('http://127.0.0.1:8000/importance')
+        fetch('http://127.0.0.1:8000/importance'),
+        fetch('http://127.0.0.1:8000/distributions')
       ])
       const tsne = await tsneRes.json()
       const metricsData = await metricsRes.json()
       const importance = await importanceRes.json()
+      const distributions = await distRes.json()
       setTsneData(tsne)
       setMetrics(metricsData)
       setImportanceData(importance)
+      setDistributionData(distributions)
     } catch (err) {
       console.error("Visuals fetch failed", err)
     }
@@ -65,7 +69,7 @@ function App() {
   }, [fetchStatus])
 
   useEffect(() => {
-    if (['roc', 'pr', 'cm', 'tsne', 'importance'].includes(activeTab)) {
+    if (['roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
       fetchVisuals()
     }
   }, [activeTab, fetchVisuals])
@@ -116,7 +120,7 @@ function App() {
   ], [prediction])
 
   // Analytic tabs mapping
-  const isAnalyticTab = ['roc', 'pr', 'cm', 'tsne', 'importance'].includes(activeTab)
+  const isAnalyticTab = ['roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)
 
   return (
     <div className="flex h-screen bg-[#06080a] text-white overflow-hidden font-sans">
@@ -159,23 +163,34 @@ function App() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <CommitteeReview artifacts={artifacts} prediction={prediction} />
                   <div className="bg-[#0d1117] border border-gray-800 rounded-lg p-8">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-blue-500 mb-6">Performance Distribution</h3>
+                    <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-500 mb-8 flex items-center gap-2">
+                      <TrendingUp size={14} className="text-blue-500" />
+                      Performance Distribution
+                    </h3>
                     <div className="space-y-6">
                       {prediction?.models ? Object.entries(prediction.models).sort((a,b) => parseFloat(b[1]) - parseFloat(a[1])).map(([name, score], i) => (
-                        <div key={i} className="space-y-2">
-                          <div className="flex justify-between text-[9px] font-bold uppercase">
-                            <span className="text-gray-400">{name}</span>
-                            <span className="text-white">{score}</span>
+                        <div key={i} className="space-y-2 group">
+                          <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
+                            <span className="text-gray-300">{name}</span>
+                            <span className="text-white font-mono">{score}</span>
                           </div>
-                          <div className="h-1.5 bg-black rounded-full overflow-hidden border border-gray-800">
+                          <div className="h-1.5 bg-black rounded-full overflow-hidden border border-gray-800 shadow-inner">
                             <div 
-                              className={cn("h-full transition-all duration-1000", parseFloat(score) > 50 ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]")} 
+                              className={cn(
+                                "h-full transition-all duration-1000 ease-out", 
+                                parseFloat(score) > 50 
+                                  ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)]" 
+                                  : "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]"
+                              )} 
                               style={{ width: score }} 
                             />
                           </div>
                         </div>
                       )) : (
-                        <p className="text-[9px] text-gray-600 italic">Initiate forensic audit to generate performance mapping</p>
+                        <div className="py-12 flex flex-col items-center justify-center text-center opacity-30">
+                          <Activity size={32} className="text-gray-600 mb-2" />
+                          <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">Audit Required</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -235,6 +250,8 @@ function App() {
                 tsneData={tsneData} 
                 metrics={metrics}
                 importanceData={importanceData}
+                distributionData={distributionData}
+                inputs={inputs}
               />
             )}
 

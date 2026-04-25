@@ -50,6 +50,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
     { id: 'cm', label: 'Confusion Matrix', icon: ShieldCheck },
     { id: 'tsne', label: 'Latent Space', icon: Search },
     { id: 'importance', label: 'Biomarker Influence', icon: BarChart4 },
+    { id: 'distribution', label: 'Cohort Comparison', icon: Activity },
   ]
 
   return (

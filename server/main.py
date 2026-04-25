@@ -233,6 +233,30 @@ async def get_importance():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/distributions")
+async def get_distributions():
+    try:
+        data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
+        if not os.path.exists(data_path):
+            return {"error": "Raw data source not found."}
+        
+        df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
+        
+        distributions = {}
+        for col in ["AFP_pg_per_ml", "CA125_U_per_ml"]:
+            # Generate histogram data
+            counts, bin_edges = np.histogram(df[col].dropna(), bins=30)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            
+            distributions[col] = [
+                {"x": float(center), "y": int(count)} 
+                for center, count in zip(bin_centers, counts)
+            ]
+            
+        return distributions
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/metrics")
 async def get_metrics():
     # Mock curves for visualization
