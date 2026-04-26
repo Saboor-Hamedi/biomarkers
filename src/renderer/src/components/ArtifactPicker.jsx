@@ -10,9 +10,8 @@ const formatSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
-const ArtifactPicker = ({ onSync, files = [], setFiles }) => {
+const ArtifactPicker = ({ onSync, files = [], setFiles, syncing, setSyncing, onPurge }) => {
   const [isDragging, setIsDragging] = useState(false)
-  const [syncing, setSyncing] = useState(false)
 
   const onDragOver = (e) => {
     e.preventDefault()
@@ -87,8 +86,12 @@ const ArtifactPicker = ({ onSync, files = [], setFiles }) => {
 
   // 🛡️ Issue #2: Purge should reset syncing state immediately
   const handlePurge = () => {
-    setFiles([])
-    setSyncing(false)
+    if (onPurge) {
+      onPurge()
+    } else {
+      setFiles([])
+      if (setSyncing) setSyncing(false)
+    }
   }
 
   const removeFile = (index) => {

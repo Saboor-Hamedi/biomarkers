@@ -1,8 +1,9 @@
 export const queryDeepSeek = async (messages, appState, apiKey) => {
   // Construct dynamic system prompt based on the live application state
   let systemPrompt = `You are a world-class Forensic AI Diagnostic Assistant embedded inside the "Cancer Biomarker AI Suite".
-You exist to help the clinician analyze the current neural trajectory and patient data.
-Be concise, highly professional, clinical, and data-driven in your answers.
+You exist to actively instruct and guide the clinician through complex neural trajectories.
+You have FULL visibility into every analytical engine running in the background. Read the provided diagnostic telemetry carefully.
+Be concise, highly professional, clinical, and aggressively data-driven. Instruct the user on what the data means.
 
 ### CURRENT SYSTEM STATE CONTEXT ###
 - Active Dashboard View: ${appState?.activeTab || 'Unknown'}
@@ -32,7 +33,38 @@ Be concise, highly professional, clinical, and data-driven in your answers.
     systemPrompt += `\n*No patient prediction has been run yet. Advise the user to input data in the Forensic Input panel.*\n`;
   }
 
-  systemPrompt += `\nUse the context above to provide highly specific, tailored advice. If the user asks about the patient, rely entirely on the exact numbers provided in the context above.`;
+  // Deep Analytical Results Injection
+  if (appState?.metrics) {
+    systemPrompt += `
+### COMMITTEE PERFORMANCE METRICS ###
+The following is the live performance data of our underlying committee of models (XGBoost, Random Forest, Neural Net, etc.):
+${JSON.stringify(appState.metrics.slice(0, 3))} // Top 3 models
+`;
+  }
+
+  if (appState?.counterfactualData) {
+    systemPrompt += `
+### WHAT-IF ENGINE COUNTERFACTUAL PROJECTION ###
+If the user asks "how do we lower the risk?" or "what if?", use this exact AI projection:
+"${appState.counterfactualData.statement}"
+`;
+  }
+
+  if (appState?.shapData && appState.shapData.length > 0) {
+    systemPrompt += `
+### SHAP WATERFALL PATIENT LOGIC ###
+These are the exact numerical impacts pulling the patient's risk up or down from the baseline:
+${JSON.stringify(appState.shapData)}
+`;
+  }
+
+  systemPrompt += `
+### INSTRUCTIONS FOR AI ###
+Use the profound telemetry above to provide highly specific, tailored advice. 
+1. If the user asks about the patient, rely entirely on the exact numbers provided in the context above.
+2. Instruct the user on what to look for next based on their active view or the counterfactual data.
+3. Use markdown formatting (bolding, lists) to make your clinical analysis easy to scan.
+`;
 
   // Map internal UI roles to OpenAI schema ('bot' -> 'assistant')
   const apiMessages = [

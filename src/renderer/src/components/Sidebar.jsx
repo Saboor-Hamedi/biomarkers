@@ -19,7 +19,8 @@ const SidebarItem = memo(({ icon: Icon, label, active, collapsed, onClick }) => 
   <button
     onClick={onClick}
     className={cn(
-      "flex items-center w-full px-4 py-3 transition-all duration-200 group relative",
+      "flex items-center w-full py-3 transition-all duration-200 group relative",
+      collapsed ? "justify-center px-0" : "px-4",
       active 
         ? "bg-blue-600/10 text-blue-500" 
         : "text-gray-500 hover:bg-gray-800/40 hover:text-gray-300"
@@ -36,7 +37,18 @@ const SidebarItem = memo(({ icon: Icon, label, active, collapsed, onClick }) => 
 ))
 
 const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebarCollapsed')
+    return saved ? JSON.parse(saved) : false
+  })
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev
+      localStorage.setItem('sidebarCollapsed', JSON.stringify(next))
+      return next
+    })
+  }
 
   const mainItems = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -67,7 +79,7 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      <div className="flex items-center justify-between p-6 border-b border-gray-800 h-16 shrink-0">
+      <div className={cn("flex items-center border-b border-gray-800 h-16 shrink-0", collapsed ? "justify-center p-0" : "justify-between p-6")}>
         {!collapsed && (
           <div className="flex items-center gap-3">
             <Activity className="text-blue-600" size={20} />
@@ -75,14 +87,14 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
           </div>
         )}
         <button 
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={toggleCollapsed}
           className="p-1.5 hover:bg-gray-800 rounded border border-gray-800 transition-colors text-gray-500"
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
       </div>
 
-      <div className="flex-1 py-4 overflow-y-auto overflow-x-hidden custom-scrollbar space-y-6">
+      <div className="flex-1 py-4 overflow-y-auto overflow-x-hidden space-y-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div>
           {!collapsed && <p className="px-6 mb-2 text-[7px] font-black text-gray-600 uppercase tracking-[0.3em]">Main Hub</p>}
           {mainItems.map((item) => (
@@ -110,7 +122,7 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
         </div>
       </div>
 
-      <div className="p-4 border-t border-gray-800 shrink-0">
+      <div className={cn("border-t border-gray-800 shrink-0", collapsed ? "p-2" : "p-4")}>
         <SidebarItem
           icon={Settings}
           label="Settings"

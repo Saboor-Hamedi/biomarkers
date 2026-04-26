@@ -82,6 +82,26 @@ app.whenReady().then(() => {
     return { status: 'success' }
   })
 
+  ipcMain.handle('check-audit-status', async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/audit')
+      if (!response.ok) return { error: 'Server Offline' }
+      return await response.json()
+    } catch (err) {
+      return { error: 'Failed to fetch' }
+    }
+  })
+
+  ipcMain.handle('check-top-patients', async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/top-patients')
+      if (!response.ok) return { error: 'Server Offline' }
+      return await response.json()
+    } catch (err) {
+      return { error: 'Failed to fetch' }
+    }
+  })
+
   ipcMain.on('ping', () => console.log('pong'))
 
   startPythonServer()

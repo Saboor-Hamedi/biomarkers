@@ -8,6 +8,7 @@ import os
 import glob
 import random
 from fastapi.middleware.cors import CORSMiddleware
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
 # Define GNNModel class for unpickling if needed
 try:
@@ -47,13 +48,32 @@ ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
 class PredictionRequest(BaseModel):
     features: dict # e.g. {"AFP_pg_per_ml": 1200, "CA125_U_per_ml": 35}
 
+# Global Cache for Models
+_cached_models = None
+_cached_scaler = None
+_cached_feature_columns = None
+_last_artifact_mtime = 0
+
+def get_latest_mtime():
+    if not os.path.exists(ARTIFACTS_DIR):
+        return 0
+    mtimes = [os.path.getmtime(os.path.join(ARTIFACTS_DIR, f)) for f in os.listdir(ARTIFACTS_DIR) if f.endswith('.pkl')]
+    return max(mtimes) if mtimes else 0
+
 def load_artifacts():
+    global _cached_models, _cached_scaler, _cached_feature_columns, _last_artifact_mtime
+    
+    current_mtime = get_latest_mtime()
+    if current_mtime == 0:
+        return None, None, None
+        
+    # Return from cache if models are already loaded and haven't been modified
+    if _cached_models is not None and current_mtime == _last_artifact_mtime:
+        return _cached_models, _cached_scaler, _cached_feature_columns
+
     models = {}
     scaler = None
     feature_columns = None
-    
-    if not os.path.exists(ARTIFACTS_DIR):
-        return None, None, None
 
     # Load Scaler
     scaler_path = os.path.join(ARTIFACTS_DIR, "scaler.pkl")
@@ -73,6 +93,12 @@ def load_artifacts():
         name = os.path.basename(mf).replace("_model.pkl", "").capitalize()
         with open(mf, "rb") as f:
             models[name] = pickle.load(f)
+            
+    # Update cache
+    _cached_models = models
+    _cached_scaler = scaler
+    _cached_feature_columns = feature_columns
+    _last_artifact_mtime = current_mtime
             
     return models, scaler, feature_columns
 
@@ -382,12 +408,21 @@ async def get_distributions():
     except Exception as e:
         return {"error": str(e)}
 
+# Global Cache for Top Patients
+_cached_top_patients = None
+_cached_top_patients_mtime = 0
+
 @app.get("/top-patients")
 async def get_top_patients():
+    global _cached_top_patients, _cached_top_patients_mtime
     try:
         models, scaler, feature_columns = load_artifacts()
         if not models or not scaler:
             return {"error": "Engine offline."}
+            
+        current_mtime = get_latest_mtime()
+        if _cached_top_patients is not None and current_mtime == _cached_top_patients_mtime:
+            return _cached_top_patients
             
         data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
         df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
@@ -435,8 +470,103 @@ async def get_top_patients():
                 }
             })
             
+        _cached_top_patients = results
+        _cached_top_patients_mtime = current_mtime
         return results
     except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/performance")
+async def get_performance():
+    try:
+        models, scaler, feature_columns = load_artifacts()
+        if not models or not scaler:
+            return {"error": "Engine offline."}
+            
+        data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
+        if not os.path.exists(data_path):
+            return {"error": "Evaluation dataset not found."}
+            
+        df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
+        
+        from sklearn.model_selection import train_test_split
+        
+        df_clean = df[feature_columns + ["PSA_pg_per_ml"]].dropna()
+        
+        # Clinical Cutoff
+        PSA_CUTOFF = 4000
+        y_true = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
+        
+        # Preprocessing
+        X = df_clean[feature_columns].copy()
+        X_log = np.log1p(X)
+        X_scaled = scaler.transform(X_log)
+        
+        # Split exactly like analysis.py to evaluate only on the unseen validation set
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_scaled, y_true, test_size=0.30, random_state=42, stratify=y_true
+        )
+        
+        results = []
+        for name, model in models.items():
+            try:
+                actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
+                
+                y_pred = []
+                y_prob = []
+                
+                if name.lower() == "gnn":
+                    import torch
+                    from torch_geometric.data import Data
+                    actual_model.eval()
+                    x_tensor = torch.FloatTensor(X_val).expand(len(feature_columns), -1)
+                    edge_index = model["edge_index"] if isinstance(model, dict) and "edge_index" in model else torch.LongTensor([[0, 1], [1, 0]]).t().contiguous()
+                    
+                    with torch.no_grad():
+                        for i in range(len(X_val)):
+                            x_single = torch.FloatTensor(X_val[i]).unsqueeze(0).expand(len(feature_columns), -1)
+                            batch = torch.zeros(x_single.size(0), dtype=torch.long)
+                            out = actual_model(x_single, edge_index, batch)
+                            probs = torch.softmax(out, dim=1)
+                            y_pred.append(probs.argmax(dim=1).item())
+                            y_prob.append(probs[0, 1].item())
+                else:
+                    y_pred = actual_model.predict(X_val)
+                    if hasattr(actual_model, 'predict_proba'):
+                        y_prob = actual_model.predict_proba(X_val)[:, 1]
+                    else:
+                        y_prob = y_pred
+
+                acc = accuracy_score(y_val, y_pred)
+                prec = precision_score(y_val, y_pred, zero_division=0)
+                rec = recall_score(y_val, y_pred, zero_division=0)
+                f1 = f1_score(y_val, y_pred, zero_division=0)
+                roc = roc_auc_score(y_val, y_prob)
+
+                results.append({
+                    "name": name.replace('_', ' '),
+                    "acc": f"{acc:.4f}",
+                    "prec": f"{prec:.4f}",
+                    "rec": f"{rec:.4f}",
+                    "f1": f"{f1:.4f}",
+                    "roc": f"{roc:.4f}",
+                    "highlight": False
+                })
+            except Exception as e:
+                print(f"Evaluation failed for {name}: {e}")
+                
+        # Highlight best model by F1
+        if results:
+            best_idx = max(range(len(results)), key=lambda i: float(results[i]['f1']))
+            results[best_idx]['highlight'] = True
+            
+        # Sort results descending by F1 score so the best is at the top
+        results.sort(key=lambda x: float(x['f1']), reverse=True)
+            
+        return results
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
         return {"error": str(e)}
 
 @app.get("/metrics")

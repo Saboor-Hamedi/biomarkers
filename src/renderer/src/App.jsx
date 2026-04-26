@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import ArtifactPicker from './components/ArtifactPicker'
@@ -20,6 +20,7 @@ function App() {
   const [metrics, setMetrics] = useState(null)
   const [importanceData, setImportanceData] = useState(null)
   const [distributionData, setDistributionData] = useState(null)
+  const [performanceData, setPerformanceData] = useState(null)
   const [trajectoryData, setTrajectoryData] = useState(null)
   const [shapData, setShapData] = useState(null)
   const [boundariesData, setBoundariesData] = useState(null)
@@ -32,6 +33,7 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [artifactFiles, setArtifactFiles] = useState([])
   const [loading, setLoading] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [auditHistory, setAuditHistory] = useState([])
   const [inputs, setInputs] = useState({
     AFP_pg_per_ml: 0,
@@ -39,38 +41,39 @@ function App() {
     PSA_pg_per_ml: 0
   })
   const [resetKey, setResetKey] = useState(0)
+  const abortControllerRef = useRef(null)
 
   const fetchStatus = useCallback(async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/audit')
-      if (!response.ok) throw new Error('Server Offline')
-      const data = await response.json()
+      const data = await window.electron.ipcRenderer.invoke('check-audit-status')
+      if (data.error) return // Silently return if server is offline
+      
       setArtifacts(data.artifacts || [])
 
       // Also fetch top patients if engine is ready
       if (data.status === 'ready') {
-        const topRes = await fetch('http://127.0.0.1:8000/top-patients')
-        const topData = await topRes.json()
+        const topData = await window.electron.ipcRenderer.invoke('check-top-patients')
         if (Array.isArray(topData)) {
           setTopPatients(topData)
-        } else if (topData.error) {
+        } else if (topData.error && topData.error !== 'Failed to fetch') {
           console.error('Ranking fetch failed:', topData.error)
         }
       }
     } catch (err) {
-      console.error('Status fetch failed', err)
+      console.error('IPC fetch failed', err)
     }
   }, [])
 
   const fetchVisuals = useCallback(async () => {
     try {
-      const [tsneRes, metricsRes, importanceRes, distRes, boundRes, heatRes] = await Promise.all([
+      const [tsneRes, metricsRes, importanceRes, distRes, boundRes, heatRes, perfRes] = await Promise.all([
         fetch('http://127.0.0.1:8000/tsne'),
         fetch('http://127.0.0.1:8000/metrics'),
         fetch('http://127.0.0.1:8000/importance'),
         fetch('http://127.0.0.1:8000/distributions'),
         fetch('http://127.0.0.1:8000/boundaries'),
-        fetch('http://127.0.0.1:8000/heatmap')
+        fetch('http://127.0.0.1:8000/heatmap'),
+        fetch('http://127.0.0.1:8000/performance')
       ])
       const tsne = await tsneRes.json()
       const metricsData = await metricsRes.json()
@@ -78,12 +81,14 @@ function App() {
       const distributions = await distRes.json()
       const bounds = await boundRes.json()
       const heat = await heatRes.json()
+      const perf = await perfRes.json()
       setTsneData(tsne)
       setMetrics(metricsData)
       setImportanceData(importance)
       setDistributionData(distributions)
       setBoundariesData(bounds)
       setHeatmapData(heat)
+      if (Array.isArray(perf)) setPerformanceData(perf)
     } catch (err) {
       console.error('Visuals fetch failed', err)
     }
@@ -96,27 +101,34 @@ function App() {
   }, [fetchStatus])
 
   useEffect(() => {
-    if (['trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
+    if (['committee', 'trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
       fetchVisuals()
     }
   }, [activeTab, fetchVisuals])
 
   const handlePredict = async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    abortControllerRef.current = new AbortController()
+    const signal = abortControllerRef.current.signal
+
     setLoading(true)
     try {
       const response = await fetch('http://127.0.0.1:8000/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ features: inputs })
+        body: JSON.stringify({ features: inputs }),
+        signal
       })
       const data = await response.json()
       if (data.error) throw new Error(data.error)
       
       try {
         const [trajRes, shapRes, cfRes] = await Promise.all([
-          fetch('http://127.0.0.1:8000/trajectory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }) }),
-          fetch('http://127.0.0.1:8000/shap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }) }),
-          fetch('http://127.0.0.1:8000/counterfactual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }) })
+          fetch('http://127.0.0.1:8000/trajectory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }), signal }),
+          fetch('http://127.0.0.1:8000/shap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }), signal }),
+          fetch('http://127.0.0.1:8000/counterfactual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }), signal })
         ])
         const trajData = await trajRes.json()
         const shapDataJson = await shapRes.json()
@@ -141,7 +153,9 @@ function App() {
         ].slice(0, 20)
       )
     } catch (err) {
-      alert('Analysis Error: ' + err.message)
+      if (err.name !== 'AbortError') {
+        alert('Analysis Error: ' + err.message)
+      }
     } finally {
       setLoading(false)
     }
@@ -229,13 +243,26 @@ function App() {
                     onSync={fetchStatus}
                     files={artifactFiles}
                     setFiles={setArtifactFiles}
+                    syncing={isSyncing}
+                    setSyncing={setIsSyncing}
+                    onPurge={async () => {
+                      if (abortControllerRef.current) {
+                        abortControllerRef.current.abort()
+                      }
+                      setArtifactFiles([])
+                      setIsSyncing(false)
+                      setLoading(false)
+                      setPrediction(null)
+                      await window.electron.ipcRenderer.invoke('reset-artifacts')
+                      fetchStatus()
+                    }}
                   />
                   <ForensicInput
                     inputs={inputs}
                     onInputChange={handleInputChange}
                     onPredict={handlePredict}
                     loading={loading}
-                    disabled={artifacts.length === 0}
+                    disabled={!artifactFiles.some(f => f.synced) || isSyncing}
                   />
                 </div>
               </div>
@@ -296,6 +323,53 @@ function App() {
                     </div>
                   </div>
                 </div>
+                
+                {/* Model Performance Summary Table */}
+                <div className="bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden">
+                  <div className="p-6 border-b border-gray-800 flex items-center justify-between bg-black/20">
+                    <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-500 flex items-center gap-2">
+                      <TrendingUp size={14} className="text-blue-500" />
+                      Model Performance Summary
+                    </h3>
+                    <span className="text-[9px] bg-blue-500/10 text-blue-500 px-2 py-1 rounded border border-blue-500/20 font-black uppercase tracking-widest">
+                      Threshold = 0.5
+                    </span>
+                  </div>
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-black/50">
+                      <tr>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Neural Model</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Accuracy</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Precision</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Recall</th>
+                        <th className="p-4 text-[9px] font-bold text-blue-500 uppercase tracking-widest border-b border-gray-800">F1-Score</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">ROC-AUC</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/50">
+                      {performanceData ? performanceData.map((model, i) => (
+                        <tr key={i} className={cn("transition-colors", model.highlight ? "bg-blue-900/10 hover:bg-blue-900/20" : "hover:bg-white/5")}>
+                          <td className="p-4 text-[10px] font-bold text-white flex items-center gap-2">
+                            {model.name}
+                            {model.highlight && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2 uppercase font-black">Best</span>}
+                          </td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.acc}</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.prec}</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.rec}</td>
+                          <td className="p-4 text-[10px] font-mono font-bold text-blue-400">{model.f1}</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.roc}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan="6" className="p-12 text-center text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                            {engineStatus === 'ready' ? 'Loading metrics...' : 'Audit Required'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
               </div>
             )}
 
@@ -529,7 +603,7 @@ function App() {
           </div>
         </main>
       </div>
-      <ChatBot appState={{ activeTab, engineStatus, inputs, prediction }} />
+      <ChatBot appState={{ activeTab, engineStatus, inputs, prediction, metrics, counterfactualData, shapData, importanceData }} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   )

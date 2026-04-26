@@ -56,6 +56,65 @@ const AnalyticView = ({ title, icon: Icon, explanation, children, tableData, col
 );
 
 const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceData, distributionData, trajectoryData, shapData, boundariesData, heatmapData, counterfactualData, inputs }) => {
+  // Hoist all hooks to the top level to obey the Rules of Hooks
+  const shapTableData = useMemo(() => shapData ? shapData.map(d => ({
+    feature: d.feature.replace('_pg_per_ml', '').replace('_U_per_ml', ''),
+    impact: `${d.value > 0 && d.feature !== 'Baseline' ? '+' : ''}${d.value}%`,
+    actual: d.actual !== undefined ? d.actual : '-'
+  })) : [], [shapData]);
+
+  const chartShapData = useMemo(() => shapData ? shapData.map(d => ({
+    ...d,
+    displayValue: `${d.value > 0 && d.feature !== 'Baseline' ? '+' : ''}${d.value}%`
+  })) : null, [shapData]);
+
+  const trajectoryModels = useMemo(() => trajectoryData && trajectoryData.length > 0 
+    ? Object.keys(trajectoryData[0]).filter(k => k !== 'psa')
+    : [], [trajectoryData]);
+  
+  const trajectoryColors = useMemo(() => ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"], []);
+  
+  const trajectoryTableData = useMemo(() => trajectoryModels.map((m, i) => {
+    const crossing = trajectoryData?.find(d => d[m] > 50);
+    return {
+      label: m,
+      val: crossing ? `${crossing.psa} pg/ml` : '> 20 pg/ml',
+      status: crossing ? 'Critical Bound' : 'Stable'
+    };
+  }), [trajectoryModels, trajectoryData]);
+
+  const rocTableData = useMemo(() => metrics?.roc ? Object.entries(metrics.roc).map(([name, data]) => ({ name, auc: data.auc, status: 'Verified' })) : [], [metrics]);
+  const prTableData = useMemo(() => metrics?.pr ? Object.entries(metrics.pr).map(([name, data]) => ({ name, prec: '0.94', recall: '0.92' })) : [], [metrics]);
+  const calibrationTableData = useMemo(() => metrics?.calibration ? Object.entries(metrics.calibration).map(([name, data]) => ({ name, Brier: '0.042', status: 'Well Calibrated' })) : [], [metrics]);
+
+  const cmTableData = useMemo(() => {
+    const cm = metrics?.cm || [[0,0],[0,0]];
+    return [
+      { label: 'True Negatives', val: cm[0][0], status: 'Negative Match' },
+      { label: 'False Positives', val: cm[0][1], status: 'Warning' },
+      { label: 'False Negatives', val: cm[1][0], status: 'Critical' },
+      { label: 'True Positives', val: cm[1][1], status: 'Positive Match' },
+    ];
+  }, [metrics]);
+
+  const tsneTableData = useMemo(() => tsneData?.points ? tsneData.points.slice(0, 10).map((p, i) => ({ id: `PT-${100+i}`, x: p.x.toFixed(2), y: p.y.toFixed(2), cls: p.cluster === 0 ? 'Negative' : 'Positive' })) : [], [tsneData]);
+
+  const importanceTableData = useMemo(() => importanceData ? Object.entries(importanceData).flatMap(([model, feats]) => 
+    Object.entries(feats).map(([feat, score]) => ({ model, feat, score: (score * 100).toFixed(1) + '%' }))
+  ) : [], [importanceData]);
+
+  const importancePrimaryModel = useMemo(() => importanceData?.XGBoost || (importanceData ? Object.values(importanceData)[0] : null), [importanceData]);
+  const importanceChartData = useMemo(() => importancePrimaryModel ? Object.entries(importancePrimaryModel).map(([name, value]) => ({ name, value })).sort((a,b) => a.value - b.value) : [], [importancePrimaryModel]);
+
+  const distributionTableData = useMemo(() => (distributionData && !distributionData.error) ? Object.entries(distributionData)
+    .filter(([_, data]) => Array.isArray(data))
+    .map(([key, data]) => ({
+      key: key.replace(/_/g, ' '), 
+      min: data.length > 0 ? Math.min(...data.map(d => d.x)).toFixed(2) : '0.00',
+      max: data.length > 0 ? Math.max(...data.map(d => d.x)).toFixed(2) : '0.00',
+      patient: inputs[key] || 'N/A'
+    })) : [], [distributionData, inputs]);
+
   if (activeTab === 'counterfactual') {
     return (
       <AnalyticView 
@@ -145,24 +204,18 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'shap') {
-    const tableData = useMemo(() => shapData ? shapData.map(d => ({
-      feature: d.feature.replace('_pg_per_ml', '').replace('_U_per_ml', ''),
-      impact: `${d.value > 0 && d.feature !== 'Baseline' ? '+' : ''}${d.value}%`,
-      actual: d.actual !== undefined ? d.actual : '-'
-    })) : [], [shapData]);
-
     return (
       <AnalyticView 
         title="SHAP Waterfall (Patient Logic)" 
         icon={BarChartIcon}
         explanation="Deconstructs the mathematical journey of the current patient's prediction. Red bars push the risk higher; green bars pull it down."
         columns={['Feature', 'Impact', 'Input Value']}
-        tableData={tableData}
+        tableData={shapTableData}
       >
         <div className="h-[400px]">
-          {shapData ? (
+          {chartShapData ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={shapData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }} layout="vertical">
+              <BarChart data={chartShapData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" horizontal={false} />
                 <XAxis type="number" stroke="#4b5563" fontSize={10} label={{ value: 'Risk Impact (%)', position: 'bottom', fill: '#4b5563', fontSize: 10 }} />
                 <YAxis dataKey="feature" type="category" stroke="#4b5563" fontSize={10} width={100} />
@@ -171,16 +224,15 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
                   formatter={(value) => [`${value > 0 ? '+' : ''}${value}%`, 'Impact']}
                 />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                  {shapData.map((entry, index) => (
+                  {chartShapData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.feature === 'Baseline' ? '#3b82f6' : entry.value > 0 ? '#ef4444' : '#10b981'} />
                   ))}
                   <LabelList 
-                    dataKey="value" 
+                    dataKey="displayValue" 
                     position="right" 
                     fill="#d1d5db" 
                     fontSize={10} 
                     fontWeight="bold"
-                    formatter={(val, entry) => `${val > 0 && entry.feature !== 'Baseline' ? '+' : ''}${val}%`} 
                   />
                 </Bar>
               </BarChart>
@@ -195,30 +247,14 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
       </AnalyticView>
     );
   }
+  
   if (activeTab === 'trajectory') {
-    const models = useMemo(() => trajectoryData && trajectoryData.length > 0 
-      ? Object.keys(trajectoryData[0]).filter(k => k !== 'psa')
-      : [], [trajectoryData]);
-    
-    // Assign colors to models
-    const colors = useMemo(() => ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"], []);
-    
-    const tableData = useMemo(() => models.map((m, i) => {
-      // Find where this model crosses 50% risk
-      const crossing = trajectoryData?.find(d => d[m] > 50);
-      return {
-        label: m,
-        val: crossing ? `${crossing.psa} pg/ml` : '> 20 pg/ml',
-        status: crossing ? 'Critical Bound' : 'Stable'
-      };
-    }), [models, trajectoryData]);
-
     return (
       <AnalyticView 
         title="Neural Risk Trajectories (PSA Sweep)" 
         icon={Activity}
         explanation="This visualizes Partial Dependence Waves. We sweep the PSA biomarker from 0 to 20 while holding others constant, revealing the precise danger thresholds for each model in the ensemble."
-        tableData={tableData}
+        tableData={trajectoryTableData}
         columns={['Neural Model', '50% Risk Threshold', 'Boundary Status']}
       >
         <div className="h-[400px]">
@@ -248,15 +284,15 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
                   labelFormatter={(label) => `PSA Level: ${label} pg/ml`}
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '20px' }} />
-                {models.map((modelName, index) => (
+                {trajectoryModels.map((modelName, index) => (
                   <Line 
                     key={modelName} 
                     type="monotone" 
                     dataKey={modelName} 
-                    stroke={colors[index % colors.length]} 
+                    stroke={trajectoryColors[index % trajectoryColors.length]} 
                     strokeWidth={3} 
                     dot={false}
-                    activeDot={{ r: 6, fill: colors[index % colors.length], stroke: '#000', strokeWidth: 2 }}
+                    activeDot={{ r: 6, fill: trajectoryColors[index % trajectoryColors.length], stroke: '#000', strokeWidth: 2 }}
                     animationDuration={2000}
                   />
                 ))}
@@ -284,13 +320,12 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'roc') {
-    const tableData = useMemo(() => metrics?.roc ? Object.entries(metrics.roc).map(([name, data]) => ({ name, auc: data.auc, status: 'Verified' })) : [], [metrics]);
     return (
       <AnalyticView 
         title="ROC Performance" 
         icon={Target}
         explanation="The ROC Curve (Receiver Operating Characteristic) measures model discrimination ability. Higher curves toward the top-left indicate superior sensitivity and specificity."
-        tableData={tableData}
+        tableData={rocTableData}
         columns={['Model', 'AUC Score', 'Confidence']}
       >
         <div className="h-[400px]">
@@ -312,13 +347,12 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'pr') {
-    const tableData = useMemo(() => metrics?.pr ? Object.entries(metrics.pr).map(([name, data]) => ({ name, prec: '0.94', recall: '0.92' })) : [], [metrics]);
     return (
       <AnalyticView 
         title="Precision-Recall" 
         icon={Zap}
         explanation="Precision-Recall curves are critical for imbalanced clinical data. They show the trade-off between identifying true cases and avoiding false alarms."
-        tableData={tableData}
+        tableData={prTableData}
         columns={['Model', 'Avg Precision', 'Peak Recall']}
       >
         <div className="h-[400px]">
@@ -339,13 +373,12 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'calibration') {
-    const tableData = useMemo(() => metrics?.calibration ? Object.entries(metrics.calibration).map(([name, data]) => ({ name, Brier: '0.042', status: 'Well Calibrated' })) : [], [metrics]);
     return (
       <AnalyticView 
         title="Model Calibration (Reliability Diagram)" 
         icon={Target}
         explanation="Calibration curves show how closely the predicted probabilities align with the true fraction of positive cases. A perfectly calibrated model follows the diagonal line."
-        tableData={tableData}
+        tableData={calibrationTableData}
         columns={['Model', 'Brier Score', 'Status']}
       >
         <div className="h-[400px]">
@@ -400,22 +433,13 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'cm') {
-    const tableData = useMemo(() => {
-      const cm = metrics?.cm || [[0,0],[0,0]];
-      return [
-        { label: 'True Negatives', val: cm[0][0], status: 'Negative Match' },
-        { label: 'False Positives', val: cm[0][1], status: 'Warning' },
-        { label: 'False Negatives', val: cm[1][0], status: 'Critical' },
-        { label: 'True Positives', val: cm[1][1], status: 'Positive Match' },
-      ];
-    }, [metrics]);
     const cm = metrics?.cm || [[0,0],[0,0]];
     return (
       <AnalyticView 
         title="Confusion Matrix" 
         icon={ShieldCheck}
         explanation="The Confusion Matrix identifies classification errors. TN and TP are successes, while FP and FN represent misdiagnoses requiring further audit."
-        tableData={tableData}
+        tableData={cmTableData}
         columns={['Parameter', 'Audit Count', 'Clinical Impact']}
       >
         <div className="flex flex-col items-center gap-4 py-10">
@@ -449,13 +473,12 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'tsne') {
-    const tableData = useMemo(() => tsneData?.points ? tsneData.points.slice(0, 10).map((p, i) => ({ id: `PT-${100+i}`, x: p.x.toFixed(2), y: p.y.toFixed(2), cls: p.cluster === 0 ? 'Negative' : 'Positive' })) : [], [tsneData]);
     return (
       <AnalyticView 
         title="Latent Space (t-SNE)" 
         icon={Search}
         explanation="t-SNE projects high-dimensional biomarkers into 2D space. Points that are closer together share similar biochemical signatures."
-        tableData={tableData}
+        tableData={tsneTableData}
         columns={['Artifact', 'Dim-X', 'Dim-Y', 'Verdict']}
       >
         <div className="h-[400px]">
@@ -494,24 +517,17 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'importance') {
-    const tableData = importanceData ? Object.entries(importanceData).flatMap(([model, feats]) => 
-      Object.entries(feats).map(([feat, score]) => ({ model, feat, score: (score * 100).toFixed(1) + '%' }))
-    ) : [];
-
-    const primaryModel = importanceData?.XGBoost || (importanceData ? Object.values(importanceData)[0] : null);
-    const chartData = primaryModel ? Object.entries(primaryModel).map(([name, value]) => ({ name, value })).sort((a,b) => a.value - b.value) : [];
-
     return (
       <AnalyticView 
         title="Biomarker Influence" 
         icon={Zap}
         explanation="Feature Importance quantifies the contribution of each biomarker to the final neural verdict. Higher values indicate greater diagnostic weight."
-        tableData={tableData}
+        tableData={importanceTableData}
         columns={['Model', 'Biomarker', 'Neural Weight']}
       >
         <div className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart layout="vertical" data={chartData} margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+            <BarChart layout="vertical" data={importanceChartData} margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" horizontal={true} vertical={false} />
               <XAxis type="number" stroke="#4b5563" fontSize={10} domain={[0, 1]} />
               <YAxis dataKey="name" type="category" stroke="#4b5563" fontSize={10} width={100} />
@@ -520,8 +536,8 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
                 formatter={(value) => [`${(value * 100).toFixed(1)}%`, 'Weight']}
               />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={index === chartData.length - 1 ? '#3b82f6' : '#1d4ed8'} />
+                {importanceChartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={index === importanceChartData.length - 1 ? '#3b82f6' : '#1d4ed8'} />
                 ))}
               </Bar>
             </BarChart>
@@ -532,21 +548,12 @@ const VisualAnalytics = ({ activeTab, prediction, tsneData, metrics, importanceD
   }
 
   if (activeTab === 'distribution') {
-    const tableData = (distributionData && !distributionData.error) ? Object.entries(distributionData)
-      .filter(([_, data]) => Array.isArray(data))
-      .map(([key, data]) => ({
-        key: key.replace(/_/g, ' '), 
-        min: data.length > 0 ? Math.min(...data.map(d => d.x)).toFixed(2) : '0.00',
-        max: data.length > 0 ? Math.max(...data.map(d => d.x)).toFixed(2) : '0.00',
-        patient: inputs[key] || 'N/A'
-      })) : [];
-
     return (
       <AnalyticView 
         title="Cohort Comparison" 
         icon={Activity}
         explanation="Density plots show the frequency distribution of biomarkers in the study population. The pulsing marker indicates the current patient's position relative to the cohort."
-        tableData={tableData}
+        tableData={distributionTableData}
         columns={['Biomarker', 'Range Min', 'Range Max', 'Patient Value']}
       >
         <div className="space-y-12">
