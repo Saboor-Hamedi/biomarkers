@@ -66,6 +66,7 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
     { id: 'roc', label: 'ROC Analysis', icon: Target },
     { id: 'pr', label: 'PR Dynamics', icon: Zap },
     { id: 'calibration', label: 'Model Calibration', icon: Target },
+    { id: 'calibration-risk', label: 'Calibration Risk', icon: ShieldCheck },
     { id: 'cm', label: 'Confusion Matrix', icon: ShieldCheck },
     { id: 'tsne', label: 'Latent Space', icon: Search },
     { id: 'importance', label: 'Biomarker Influence', icon: BarChart },

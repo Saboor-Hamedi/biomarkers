@@ -26,6 +26,7 @@ function App() {
   const [boundariesData, setBoundariesData] = useState(null)
   const [heatmapData, setHeatmapData] = useState(null)
   const [counterfactualData, setCounterfactualData] = useState(null)
+  const [calibrationRiskData, setCalibrationRiskData] = useState(null)
   const [topPatients, setTopPatients] = useState([])
   const [visibleCount, setVisibleCount] = useState(10)
   const [selectedPatient, setSelectedPatient] = useState(null)
@@ -66,14 +67,15 @@ function App() {
 
   const fetchVisuals = useCallback(async () => {
     try {
-      const [tsneRes, metricsRes, importanceRes, distRes, boundRes, heatRes, perfRes] = await Promise.all([
+      const [tsneRes, metricsRes, importanceRes, distRes, boundRes, heatRes, perfRes, calRiskRes] = await Promise.all([
         fetch('http://127.0.0.1:8000/tsne'),
         fetch('http://127.0.0.1:8000/metrics'),
         fetch('http://127.0.0.1:8000/importance'),
         fetch('http://127.0.0.1:8000/distributions'),
         fetch('http://127.0.0.1:8000/boundaries'),
         fetch('http://127.0.0.1:8000/heatmap'),
-        fetch('http://127.0.0.1:8000/performance')
+        fetch('http://127.0.0.1:8000/performance'),
+        fetch('http://127.0.0.1:8000/calibration-risk')
       ])
       const tsne = await tsneRes.json()
       const metricsData = await metricsRes.json()
@@ -82,6 +84,7 @@ function App() {
       const bounds = await boundRes.json()
       const heat = await heatRes.json()
       const perf = await perfRes.json()
+      const calRisk = await calRiskRes.json()
       setTsneData(tsne)
       setMetrics(metricsData)
       setImportanceData(importance)
@@ -89,6 +92,7 @@ function App() {
       setBoundariesData(bounds)
       setHeatmapData(heat)
       if (Array.isArray(perf)) setPerformanceData(perf)
+      if (calRisk && !calRisk.error) setCalibrationRiskData(calRisk)
     } catch (err) {
       console.error('Visuals fetch failed', err)
     }
@@ -101,7 +105,7 @@ function App() {
   }, [fetchStatus])
 
   useEffect(() => {
-    if (['committee', 'trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
+    if (['committee', 'trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution', 'calibration-risk'].includes(activeTab)) {
       fetchVisuals()
     }
   }, [activeTab, fetchVisuals])
@@ -203,7 +207,7 @@ function App() {
   )
 
   // Analytic tabs mapping
-  const isAnalyticTab = ['trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'influence', 'tsne', 'distribution', 'metrics', 'roc', 'pr', 'cm', 'importance'].includes(
+  const isAnalyticTab = ['trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'calibration-risk', 'influence', 'tsne', 'distribution', 'metrics', 'roc', 'pr', 'cm', 'importance'].includes(
     activeTab
   )
 
@@ -590,6 +594,7 @@ function App() {
                 boundariesData={boundariesData}
                 heatmapData={heatmapData}
                 counterfactualData={counterfactualData}
+                calibrationRiskData={calibrationRiskData}
                 inputs={inputs}
               />
             )}

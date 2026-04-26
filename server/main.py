@@ -569,6 +569,126 @@ async def get_performance():
         print(traceback.format_exc())
         return {"error": str(e)}
 
+@app.get("/calibration-risk")
+async def get_calibration_risk():
+    try:
+        from sklearn.model_selection import train_test_split
+        from sklearn.calibration import calibration_curve
+        
+        models, scaler, feature_columns = load_artifacts()
+        if not models or not scaler:
+            return {"error": "Engine offline."}
+
+        data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
+        if not os.path.exists(data_path):
+            return {"error": "Dataset not found."}
+
+        df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
+        df_clean = df[feature_columns + ["PSA_pg_per_ml"]].dropna()
+
+        PSA_CUTOFF = 4000
+        y_all = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
+        X = df_clean[feature_columns].copy()
+        X_log = np.log1p(X)
+        X_scaled = scaler.transform(X_log)
+
+        _, X_val, _, y_val = train_test_split(
+            X_scaled, y_all, test_size=0.30, random_state=42, stratify=y_all
+        )
+        y_val_np = y_val.values
+
+        # ── 1. Calibration Curves ──────────────────────────────────────────────
+        calibration_data = {}
+        best_model_name = None
+        best_f1 = -1
+        best_proba = None
+
+        for name, model in models.items():
+            actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
+            if not hasattr(actual_model, "predict_proba") or name.lower() == "gnn":
+                continue
+            try:
+                y_prob = actual_model.predict_proba(X_val)[:, 1]
+                y_pred = (y_prob >= 0.5).astype(int)
+                current_f1 = f1_score(y_val_np, y_pred, zero_division=0)
+                if current_f1 > best_f1:
+                    best_f1 = current_f1
+                    best_model_name = name
+                    best_proba = y_prob
+
+                frac_pos, mean_pred = calibration_curve(y_val_np, y_prob, n_bins=8)
+                calibration_data[name] = [
+                    {"x": round(float(mp), 3), "y": round(float(fp), 3)}
+                    for mp, fp in zip(mean_pred, frac_pos)
+                ]
+            except Exception as e:
+                print(f"Calibration failed for {name}: {e}")
+
+        if best_proba is None:
+            return {"error": "No models support probability estimation."}
+
+        # ── 2. Risk Distribution (best model) ──────────────────────────────────
+        benign_proba = best_proba[y_val_np == 0]
+        malignant_proba = best_proba[y_val_np == 1]
+
+        def histogram_bins(arr, bins=20):
+            counts, edges = np.histogram(arr, bins=bins, range=(0, 1), density=True)
+            centers = (edges[:-1] + edges[1:]) / 2
+            return [{"x": round(float(c), 3), "y": round(float(v), 3)} for c, v in zip(centers, counts)]
+
+        risk_distribution = {
+            "benign": histogram_bins(benign_proba),
+            "malignant": histogram_bins(malignant_proba),
+            "bestModel": best_model_name.replace("_", " ")
+        }
+
+        # ── 3. Threshold Optimization ──────────────────────────────────────────
+        thresholds = np.linspace(0, 1, 100)
+        threshold_data = []
+        best_f1_thresh = 0
+        optimal_threshold = 0.5
+
+        for thresh in thresholds:
+            y_pred_t = (best_proba >= thresh).astype(int)
+            if len(np.unique(y_pred_t)) > 1:
+                prec = float(precision_score(y_val_np, y_pred_t, zero_division=0))
+                rec = float(recall_score(y_val_np, y_pred_t, zero_division=0))
+                f1_t = float(f1_score(y_val_np, y_pred_t, zero_division=0))
+            else:
+                prec, rec, f1_t = 0.0, float(y_val_np.mean()) if y_pred_t[0] == 1 else 0.0, 0.0
+
+            if f1_t > best_f1_thresh:
+                best_f1_thresh = f1_t
+                optimal_threshold = float(thresh)
+
+            threshold_data.append({
+                "threshold": round(float(thresh), 2),
+                "precision": round(prec, 3),
+                "recall": round(rec, 3),
+                "f1": round(f1_t, 3)
+            })
+
+        # ── 4. Risk Stratification ─────────────────────────────────────────────
+        stratification = {
+            "safe":     int((best_proba < 0.45).sum()),
+            "moderate": int(((best_proba >= 0.45) & (best_proba < 0.60)).sum()),
+            "high":     int(((best_proba >= 0.60) & (best_proba <= 0.75)).sum()),
+            "critical": int((best_proba > 0.75).sum()),
+        }
+
+        return {
+            "calibration": calibration_data,
+            "riskDistribution": risk_distribution,
+            "thresholdOptimization": threshold_data,
+            "optimalThreshold": round(optimal_threshold, 2),
+            "stratification": stratification
+        }
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return {"error": str(e)}
+
+
 @app.get("/metrics")
 async def get_metrics():
     # Mock curves for visualization
