@@ -35,10 +35,17 @@ Be concise, highly professional, clinical, and aggressively data-driven. Instruc
 
   // Deep Analytical Results Injection
   if (appState?.metrics) {
+    // metrics is an object with {roc, pr, calibration, cm}
+    // We'll extract the AUC scores for each model to provide context to the AI
+    const committeeSummary = Object.entries(appState.metrics.roc || {}).map(([name, data]) => ({
+      model: name,
+      auc: data.auc
+    }));
+
     systemPrompt += `
 ### COMMITTEE PERFORMANCE METRICS ###
-The following is the live performance data of our underlying committee of models (XGBoost, Random Forest, Neural Net, etc.):
-${JSON.stringify(appState.metrics.slice(0, 3))} // Top 3 models
+The following is the live performance data of our underlying committee of models (AUC scores):
+${JSON.stringify(committeeSummary)}
 `;
   }
 

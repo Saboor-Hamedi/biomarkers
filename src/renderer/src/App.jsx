@@ -106,9 +106,11 @@ function App() {
 
   useEffect(() => {
     if (['committee', 'trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution', 'calibration-risk'].includes(activeTab)) {
-      fetchVisuals()
+      if (!tsneData) {
+        fetchVisuals()
+      }
     }
-  }, [activeTab, fetchVisuals])
+  }, [activeTab, fetchVisuals, tsneData])
 
   const handlePredict = async () => {
     if (abortControllerRef.current) {

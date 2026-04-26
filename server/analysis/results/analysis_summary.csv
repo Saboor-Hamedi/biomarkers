@@ -1,0 +1,2 @@
+total_samples,samples_after_cleaning,features_used,target_definition,train_size,validation_size,class_0_percent,class_1_percent,best_model,best_model_accuracy,best_model_f1,best_model_auc,cv_mean_f1,cv_std_f1
+1000,1000,"['AFP_pg_per_ml', 'CA125_U_per_ml']",PSA > 4000 pg/mL,700,300,88.1,11.899999999999999,XGBoost,0.7333333333333333,0.21568627450980393,0.5851220538720538,0.1790938569627094,0.0137493433214471

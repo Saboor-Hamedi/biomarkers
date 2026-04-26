@@ -6,6 +6,11 @@ const api = {
   getPathForFile: (file) => webUtils.getPathForFile(file)
 }
 
+// Disable context menu globally
+if (typeof window !== 'undefined') {
+  window.addEventListener('contextmenu', (e) => e.preventDefault())
+}
+
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.

@@ -43,7 +43,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
+ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "analysis", "models")
 
 class PredictionRequest(BaseModel):
     features: dict # e.g. {"AFP_pg_per_ml": 1200, "CA125_U_per_ml": 35}
@@ -56,6 +56,7 @@ _last_artifact_mtime = 0
 
 def get_latest_mtime():
     if not os.path.exists(ARTIFACTS_DIR):
+        print(f"Warning: ARTIFACTS_DIR not found at {ARTIFACTS_DIR}")
         return 0
     mtimes = [os.path.getmtime(os.path.join(ARTIFACTS_DIR, f)) for f in os.listdir(ARTIFACTS_DIR) if f.endswith('.pkl')]
     return max(mtimes) if mtimes else 0
@@ -77,22 +78,29 @@ def load_artifacts():
 
     # Load Scaler
     scaler_path = os.path.join(ARTIFACTS_DIR, "scaler.pkl")
-    if os.path.exists(scaler_path):
+    if os.path.exists(scaler_path) and os.path.getsize(scaler_path) > 0:
         with open(scaler_path, "rb") as f:
             scaler = pickle.load(f)
 
     # Load Feature Columns
     features_path = os.path.join(ARTIFACTS_DIR, "feature_columns.pkl")
-    if os.path.exists(features_path):
+    if os.path.exists(features_path) and os.path.getsize(features_path) > 0:
         with open(features_path, "rb") as f:
             feature_columns = pickle.load(f)
 
     # Load Models
     model_files = glob.glob(os.path.join(ARTIFACTS_DIR, "*_model.pkl"))
     for mf in model_files:
-        name = os.path.basename(mf).replace("_model.pkl", "").capitalize()
-        with open(mf, "rb") as f:
-            models[name] = pickle.load(f)
+        if os.path.getsize(mf) == 0:
+            print(f"Skipping empty model file: {mf}")
+            continue
+            
+        name = os.path.basename(mf).replace("_model.pkl", "").replace("_", " ").capitalize()
+        try:
+            with open(mf, "rb") as f:
+                models[name] = pickle.load(f)
+        except Exception as e:
+            print(f"Failed to load model {name} from {mf}: {e}")
             
     # Update cache
     _cached_models = models
@@ -335,22 +343,64 @@ async def audit():
 
 @app.get("/tsne")
 async def get_tsne():
-    # In a real scenario, this would compute t-SNE on the synchronized dataset
-    # For now, we return a high-fidelity mock dataset for visualization
-    import random
-    points = []
-    for _ in range(50):
-        # Cluster 1 (Low Risk)
-        afp = random.uniform(500, 1500)
-        ca125 = random.uniform(10, 30)
-        points.append({"x": random.uniform(-10, 2), "y": random.uniform(-10, 5), "cluster": 0, "AFP": afp, "CA125": ca125})
+    try:
+        from sklearn.manifold import TSNE
+        from sklearn.decomposition import PCA
+        from sklearn.model_selection import train_test_split
         
-        # Cluster 2 (High Risk)
-        afp = random.uniform(2000, 8000)
-        ca125 = random.uniform(35, 100)
-        points.append({"x": random.uniform(3, 10), "y": random.uniform(-2, 10), "cluster": 1, "AFP": afp, "CA125": ca125})
-    
-    return {"points": points}
+        models, scaler, feature_columns = load_artifacts()
+        if not models or not scaler:
+            return {"error": "Engine offline."}
+
+        data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
+        df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
+        df_clean = df[feature_columns + ["PSA_pg_per_ml"]].dropna()
+
+        PSA_CUTOFF = 4000
+        y_all = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
+        X = df_clean[feature_columns].copy()
+        X_log = np.log1p(X)
+        X_scaled = scaler.transform(X_log)
+
+        # PCA for speed and secondary visualization
+        pca = PCA(n_components=2)
+        X_pca = pca.fit_transform(X_scaled)
+        
+        # t-SNE computation
+        tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(X_scaled)-1))
+        X_tsne = tsne.fit_transform(X_scaled)
+
+        # Get best model for predictions
+        # For simplicity, we'll use XGBoost as it's typically the best, or the first available
+        best_model_name = "Xgboost" if "Xgboost" in models else list(models.keys())[0]
+        model_entry = models[best_model_name]
+        actual_model = model_entry["model"] if isinstance(model_entry, dict) and "model" in model_entry else model_entry
+        
+        y_pred = actual_model.predict(X_scaled)
+        y_prob = actual_model.predict_proba(X_scaled)[:, 1] if hasattr(actual_model, "predict_proba") else y_pred
+
+        points = []
+        for i in range(len(X_tsne)):
+            points.append({
+                "x": float(X_tsne[i, 0]),
+                "y": float(X_tsne[i, 1]),
+                "pca_x": float(X_pca[i, 0]),
+                "pca_y": float(X_pca[i, 1]),
+                "true_label": int(y_all.iloc[i]),
+                "predicted": int(y_pred[i]),
+                "probability": float(y_prob[i]),
+                "sample_id": str(df_clean.index[i])
+            })
+            
+        return {
+            "points": points,
+            "best_model": best_model_name,
+            "pca_explained_variance": [float(v) for v in pca.explained_variance_ratio_]
+        }
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return {"error": str(e)}
 
 @app.get("/importance")
 async def get_importance():

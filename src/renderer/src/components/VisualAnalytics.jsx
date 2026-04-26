@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react'
+import React, { memo, useMemo, useState } from 'react'
 import {
   BarChart,
   Bar,
@@ -25,23 +25,38 @@ import {
   ShieldCheck,
   Search,
   Activity,
+  LayoutGrid,
+  Maximize2,
   BarChart as BarChartIcon
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
-const AnalyticView = ({ title, icon: Icon, explanation, children, tableData, columns }) => (
+const AnalyticView = ({
+  title,
+  icon: Icon,
+  explanation,
+  children,
+  tableData,
+  columns,
+  extraAction
+}) => (
   <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
     <div className="flex items-center justify-between border-b border-gray-800 pb-6">
       <div className="flex items-center gap-3">
         <Icon size={20} className="text-blue-500" />
         <h2 className="text-xl font-black uppercase italic text-white tracking-tight">{title}</h2>
       </div>
-      <div className="bg-blue-500/5 border border-blue-500/20 px-4 py-2 rounded max-w-md">
-        <div className="flex items-center gap-2 mb-1">
-          <Info size={12} className="text-blue-500" />
-          <span className="text-[8px] font-black uppercase text-blue-500">Forensic Context</span>
+      <div className="flex items-center gap-4">
+        {extraAction}
+        <div className="bg-blue-500/5 border border-blue-500/20 px-4 py-2 rounded max-w-md">
+          <div className="flex items-center gap-2 mb-1">
+            <Info size={12} className="text-blue-500" />
+            <span className="text-[8px] font-black uppercase text-blue-500">Forensic Context</span>
+          </div>
+          <p className="text-[9px] text-gray-500 font-bold uppercase leading-tight">
+            {explanation}
+          </p>
         </div>
-        <p className="text-[9px] text-gray-500 font-bold uppercase leading-tight">{explanation}</p>
       </div>
     </div>
 
@@ -106,6 +121,7 @@ const VisualAnalytics = ({
   inputs
 }) => {
   // Hoist all hooks to the top level to obey the Rules of Hooks
+  const [tsneView, setTsneView] = useState('standard') // 'standard' or 'audit'
   const shapTableData = useMemo(
     () =>
       shapData
@@ -190,17 +206,24 @@ const VisualAnalytics = ({
   const tsneTableData = useMemo(
     () =>
       tsneData?.points
-        ? tsneData.points
-            .slice(0, 10)
-            .map((p, i) => ({
-              id: `PT-${100 + i}`,
-              x: p.x.toFixed(2),
-              y: p.y.toFixed(2),
-              cls: p.cluster === 0 ? 'Negative' : 'Positive'
-            }))
+        ? tsneData.points.slice(0, 10).map((p, i) => ({
+            id: p.sample_id || `PT-${100 + i}`,
+            x: p.x.toFixed(2),
+            y: p.y.toFixed(2),
+            cls: p.true_label === 0 ? 'Negative' : 'Positive',
+            prob: `${(p.probability * 100).toFixed(1)}%`
+          }))
         : [],
     [tsneData]
   )
+
+  const tsneSubsets = useMemo(() => {
+    if (!tsneData?.points) return { benign: [], malignant: [] }
+    return {
+      benign: tsneData.points.filter((p) => p.true_label === 0),
+      malignant: tsneData.points.filter((p) => p.true_label === 1)
+    }
+  }, [tsneData])
 
   const importanceTableData = useMemo(
     () =>
@@ -497,7 +520,7 @@ const VisualAnalytics = ({
                     borderRadius: '8px'
                   }}
                   itemStyle={{ fontSize: '10px', fontWeight: 'bold' }}
-                  labelStyle={{ color: '#9ca3af', fontSize: '10px', marginBottom: '8px' }}
+                  labelStyle={{ color: '#9ca3af', fontSize: '10px', paddingBottom: '8px' }}
                   formatter={(value) => [`${value}%`, undefined]}
                   labelFormatter={(label) => `PSA Level: ${label} pg/ml`}
                 />
@@ -675,7 +698,7 @@ const VisualAnalytics = ({
                   borderRadius: '8px'
                 }}
                 itemStyle={{ fontSize: '10px', fontWeight: 'bold' }}
-                labelStyle={{ color: '#9ca3af', fontSize: '10px', marginBottom: '8px' }}
+                labelStyle={{ color: '#9ca3af', fontSize: '10px', paddingBottom: '8px' }}
               />
               {metrics?.calibration &&
                 Object.entries(metrics.calibration).map(([name, data]) => (
@@ -760,58 +783,344 @@ const VisualAnalytics = ({
   }
 
   if (activeTab === 'tsne') {
+    const getProbColor = (p) => {
+      if (p < 0.25) return `rgb(68, 1, 84)`
+      if (p < 0.5) return `rgb(49, 104, 142)`
+      if (p < 0.75) return `rgb(53, 183, 121)`
+      return `rgb(253, 231, 37)`
+    }
+
     return (
       <AnalyticView
-        title="Latent Space (t-SNE)"
+        title="Latent Space Diagnostics"
         icon={Search}
-        explanation="t-SNE projects high-dimensional biomarkers into 2D space. Points that are closer together share similar biochemical signatures."
+        explanation="Multi-dimensional projection of high-fidelity biomarker signatures."
         tableData={tsneTableData}
-        columns={['Artifact', 'Dim-X', 'Dim-Y', 'Verdict']}
+        columns={['Sample', 't-SNE X', 't-SNE Y', 'Verdict', 'Risk %']}
+        extraAction={
+          <div className="flex bg-black/40 backdrop-blur-md rounded-full p-1 border border-white/5">
+            <button
+              onClick={() => setTsneView('standard')}
+              className={cn(
+                'px-4 py-1.5 text-[7px] font-black uppercase rounded-full transition-all flex items-center gap-2',
+                tsneView === 'standard'
+                  ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)]'
+                  : 'text-gray-500 hover:text-gray-300'
+              )}
+            >
+              <Maximize2 size={10} />
+              Core View
+            </button>
+            <button
+              onClick={() => setTsneView('audit')}
+              className={cn(
+                'px-4 py-1.5 text-[7px] font-black uppercase rounded-full transition-all flex items-center gap-2',
+                tsneView === 'audit'
+                  ? 'bg-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.5)]'
+                  : 'text-gray-500 hover:text-gray-300'
+              )}
+            >
+              <LayoutGrid size={10} />
+              Neural Audit
+            </button>
+          </div>
+        }
       >
-        <div className="h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="#1f2937"
-                vertical={false}
-                strokeOpacity={0.2}
-              />
-              <XAxis type="number" dataKey="x" hide />
-              <YAxis type="number" dataKey="y" hide />
-              <ZAxis type="number" range={[50, 51]} />
-              <Tooltip
-                cursor={{ strokeDasharray: '3 3' }}
-                content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload
-                    return (
-                      <div className="bg-black border border-gray-700 p-3 rounded shadow-xl">
-                        <p className="text-[10px] font-black text-blue-500 uppercase mb-2">
-                          Patient Profile
-                        </p>
-                        <div className="space-y-1">
-                          <p className="text-[9px] text-gray-400 font-bold uppercase">
-                            Status:{' '}
-                            <span className={data.cluster === 0 ? 'text-blue-500' : 'text-red-500'}>
-                              {data.cluster === 0 ? 'NEGATIVE' : 'POSITIVE'}
-                            </span>
+        {tsneView === 'standard' ? (
+          <div className="h-[550px] bg-black/20 rounded-xl border border-white/5 p-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#1f2937"
+                  vertical={false}
+                  strokeOpacity={0.1}
+                />
+                <XAxis type="number" dataKey="x" hide />
+                <YAxis type="number" dataKey="y" hide />
+                <ZAxis type="number" range={[25, 26]} />
+                <Tooltip
+                  cursor={{ strokeDasharray: '3 3' }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload
+                      return (
+                        <div className="bg-black/90 backdrop-blur-xl border border-white/10 p-4 rounded-lg shadow-2xl">
+                          <p className="text-[10px] font-black text-blue-400 uppercase mb-3 tracking-widest">
+                            Diagnostic Profile
                           </p>
+                          <div className="space-y-2">
+                            <div className="flex justify-between gap-8">
+                              <span className="text-[8px] text-gray-500 font-bold uppercase">
+                                Sample ID
+                              </span>
+                              <span className="text-[8px] text-white font-mono">
+                                {data.sample_id}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-8">
+                              <span className="text-[8px] text-gray-500 font-bold uppercase">
+                                Clinical
+                              </span>
+                              <span
+                                className={cn(
+                                  'text-[8px] font-black uppercase',
+                                  data.true_label === 0 ? 'text-blue-500' : 'text-red-500'
+                                )}
+                              >
+                                {data.true_label === 0 ? 'BENIGN' : 'MALIGNANT'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-8 border-t border-white/5 pt-2">
+                              <span className="text-[8px] text-gray-500 font-bold uppercase">
+                                Risk Score
+                              </span>
+                              <span className="text-[8px] text-white font-black">
+                                {(data.probability * 100).toFixed(1)}%
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    )
-                  }
-                  return null
-                }}
-              />
-              <Scatter name="Space" data={tsneData?.points || []}>
-                {tsneData?.points?.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.cluster === 0 ? '#3b82f6' : '#ef4444'} />
-                ))}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
+                      )
+                    }
+                    return null
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{
+                    fontSize: '8px',
+                    paddingTop: '30px',
+                    textTransform: 'uppercase',
+                    fontWeight: '900',
+                    letterSpacing: '0.1em'
+                  }}
+                />
+                <Scatter
+                  name="Benign Signature"
+                  data={tsneSubsets.benign}
+                  fill="#3b82f6"
+                  fillOpacity={0.8}
+                  isAnimationActive={false}
+                />
+                <Scatter
+                  name="Malignant Signature"
+                  data={tsneSubsets.malignant}
+                  fill="#ef4444"
+                  fillOpacity={0.8}
+                  shape="triangle"
+                  isAnimationActive={false}
+                />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="space-y-12">
+            {/* Plot 1: t-SNE by True Label */}
+            <div className="bg-black/30 p-6 rounded-2xl border border-white/5 relative">
+              <div className="flex items-center justify-between mb-6">
+                <div className="text-[8px] font-black text-blue-500 uppercase tracking-widest">
+                  t-SNE: Clinical Ground Truth
+                </div>
+                <div className="h-px flex-1 bg-gradient-to-r from-blue-500/20 to-transparent ml-4" />
+              </div>
+              <div className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#1f2937"
+                      vertical={false}
+                      strokeOpacity={0.1}
+                    />
+                    <XAxis type="number" dataKey="x" hide />
+                    <YAxis type="number" dataKey="y" hide />
+                    <ZAxis type="number" range={[15, 16]} />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload
+                          return (
+                            <div className="bg-black/90 border border-white/10 p-2 rounded shadow-xl">
+                              <p className="text-[7px] font-black text-blue-500 uppercase tracking-tighter">
+                                Sample: {data.sample_id}
+                              </p>
+                            </div>
+                          )
+                        }
+                        return null
+                      }}
+                    />
+                    <Scatter data={tsneData?.points || []} isAnimationActive={false}>
+                      {tsneData?.points?.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.true_label === 0 ? '#3b82f6' : '#ef4444'}
+                          fillOpacity={0.7}
+                        />
+                      ))}
+                    </Scatter>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Plot 2: t-SNE by Best Model Prediction */}
+            <div className="bg-black/30 p-6 rounded-2xl border border-white/5 relative">
+              <div className="flex items-center justify-between mb-6">
+                <div className="text-[8px] font-black text-purple-500 uppercase tracking-widest">
+                  t-SNE: {tsneData?.best_model || 'Best Model'} Consensus
+                </div>
+                <div className="h-px flex-1 bg-gradient-to-r from-purple-500/20 to-transparent ml-4" />
+              </div>
+              <div className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#1f2937"
+                      vertical={false}
+                      strokeOpacity={0.1}
+                    />
+                    <XAxis type="number" dataKey="x" hide />
+                    <YAxis type="number" dataKey="y" hide />
+                    <ZAxis type="number" range={[15, 16]} />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload
+                          return (
+                            <div className="bg-black/90 border border-white/10 p-2 rounded shadow-xl">
+                              <p className="text-[7px] font-black text-purple-500 uppercase tracking-tighter">
+                                Neural Verdict
+                              </p>
+                            </div>
+                          )
+                        }
+                        return null
+                      }}
+                    />
+                    <Scatter data={tsneData?.points || []} isAnimationActive={false}>
+                      {tsneData?.points?.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.predicted === 0 ? '#22c55e' : '#f97316'}
+                          fillOpacity={0.7}
+                        />
+                      ))}
+                    </Scatter>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Plot 3: PCA (Linear Proj) */}
+            <div className="bg-black/30 p-6 rounded-2xl border border-white/5 relative">
+              <div className="flex items-center justify-between mb-6">
+                <div className="text-[8px] font-black text-yellow-500 uppercase tracking-widest">
+                  PCA: Linear Variance (
+                  {(tsneData?.pca_explained_variance?.reduce((a, b) => a + b, 0) * 100)?.toFixed(1)}
+                  %)
+                </div>
+                <div className="h-px flex-1 bg-gradient-to-r from-yellow-500/20 to-transparent ml-4" />
+              </div>
+              <div className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#1f2937"
+                      vertical={false}
+                      strokeOpacity={0.1}
+                    />
+                    <XAxis type="number" dataKey="pca_x" hide />
+                    <YAxis type="number" dataKey="pca_y" hide />
+                    <ZAxis type="number" range={[15, 16]} />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload
+                          return (
+                            <div className="bg-black/90 border border-white/10 p-2 rounded shadow-xl">
+                              <p className="text-[7px] font-black text-yellow-500 uppercase tracking-tighter">
+                                Linear Projection
+                              </p>
+                            </div>
+                          )
+                        }
+                        return null
+                      }}
+                    />
+                    <Scatter data={tsneData?.points || []} isAnimationActive={false}>
+                      {tsneData?.points?.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.true_label === 0 ? '#3b82f6' : '#ef4444'}
+                          fillOpacity={0.7}
+                        />
+                      ))}
+                    </Scatter>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Plot 4: Risk Heatmap (t-SNE colored by probability) */}
+            <div className="bg-black/30 p-6 rounded-2xl border border-white/5 relative">
+              <div className="flex items-center justify-between mb-6">
+                <div className="text-[8px] font-black text-teal-500 uppercase tracking-widest">
+                  t-SNE: Neural Risk Topography
+                </div>
+                <div className="h-px flex-1 bg-gradient-to-r from-teal-500/20 to-transparent ml-4" />
+              </div>
+              <div className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#1f2937"
+                      vertical={false}
+                      strokeOpacity={0.1}
+                    />
+                    <XAxis type="number" dataKey="x" hide />
+                    <YAxis type="number" dataKey="y" hide />
+                    <ZAxis type="number" range={[15, 16]} />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload
+                          return (
+                            <div className="bg-black/90 border border-white/10 p-2 rounded shadow-xl">
+                              <p className="text-[7px] font-black text-teal-500 uppercase tracking-tighter">
+                                Risk Gradient
+                              </p>
+                              <p className="text-[7px] text-white/50 font-bold uppercase">
+                                Score: {(data.probability * 100).toFixed(1)}%
+                              </p>
+                            </div>
+                          )
+                        }
+                        return null
+                      }}
+                    />
+                    <Scatter data={tsneData?.points || []} isAnimationActive={false}>
+                      {tsneData?.points?.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={getProbColor(entry.probability)}
+                          fillOpacity={0.7}
+                        />
+                      ))}
+                    </Scatter>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
       </AnalyticView>
     )
   }
@@ -1046,37 +1355,64 @@ const VisualAnalytics = ({
               {calData?.riskDistribution?.bestModel || 'Best Model'} — Risk Distribution
             </p>
             <div className="h-[260px]">
-              {calData?.riskDistribution ? (() => {
-                // Merge benign and malignant arrays into one dataset by x-bin
-                const merged = (calData.riskDistribution.benign || []).map((b, i) => ({
-                  x: b.x,
-                  benign: b.y,
-                  malignant: calData.riskDistribution.malignant?.[i]?.y || 0
-                }))
-                return (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={merged} margin={{ top: 10, right: 10, bottom: 30, left: 0 }} barCategoryGap="1%">
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                      <XAxis
-                        dataKey="x"
-                        type="number"
-                        domain={[0, 1]}
-                        stroke="#4b5563"
-                        fontSize={9}
-                        tickFormatter={(v) => v.toFixed(1)}
-                        label={{ value: 'Predicted Risk Probability', position: 'bottom', fill: '#6b7280', fontSize: 9 }}
-                      />
-                      <YAxis stroke="#4b5563" fontSize={9}
-                        label={{ value: 'Density', angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 9 }}
-                      />
-                      <Tooltip contentStyle={{ backgroundColor: '#0d1117', border: '1px solid #1f2937' }} />
-                      <Legend iconType="square" wrapperStyle={{ fontSize: '9px', paddingTop: '8px' }} />
-                      <Bar dataKey="benign" name="Benign" fill="#10b981" opacity={0.75} />
-                      <Bar dataKey="malignant" name="Malignant" fill="#ef4444" opacity={0.75} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )
-              })() : (
+              {calData?.riskDistribution ? (
+                (() => {
+                  // Merge benign and malignant arrays into one dataset by x-bin
+                  const merged = (calData.riskDistribution.benign || []).map((b, i) => ({
+                    x: b.x,
+                    benign: b.y,
+                    malignant: calData.riskDistribution.malignant?.[i]?.y || 0
+                  }))
+                  return (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={merged}
+                        margin={{ top: 10, right: 10, bottom: 30, left: 0 }}
+                        barCategoryGap="1%"
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+                        <XAxis
+                          dataKey="x"
+                          type="number"
+                          domain={[0, 1]}
+                          stroke="#4b5563"
+                          fontSize={9}
+                          tickFormatter={(v) => v.toFixed(1)}
+                          label={{
+                            value: 'Predicted Risk Probability',
+                            position: 'bottom',
+                            fill: '#6b7280',
+                            fontSize: 9
+                          }}
+                        />
+                        <YAxis
+                          stroke="#4b5563"
+                          fontSize={9}
+                          label={{
+                            value: 'Density',
+                            angle: -90,
+                            position: 'insideLeft',
+                            fill: '#6b7280',
+                            fontSize: 9
+                          }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#0d1117',
+                            border: '1px solid #1f2937'
+                          }}
+                        />
+                        <Legend
+                          iconType="square"
+                          wrapperStyle={{ fontSize: '9px', paddingTop: '8px' }}
+                        />
+                        <Bar dataKey="benign" name="Benign" fill="#10b981" opacity={0.75} />
+                        <Bar dataKey="malignant" name="Malignant" fill="#ef4444" opacity={0.75} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )
+                })()
+              ) : (
                 <div className="w-full h-full flex items-center justify-center text-gray-600 text-[9px] uppercase font-bold">
                   Audit Required
                 </div>

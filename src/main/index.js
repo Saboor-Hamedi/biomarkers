@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join, basename } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -46,7 +46,10 @@ function createWindow() {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
+  Menu.setApplicationMenu(null)
   app.on('browser-window-created', (_, window) => {
+    window.autoHideMenuBar = true
+    window.setMenuBarVisibility(false)
     optimizer.watchWindowShortcuts(window)
   })
 
