@@ -6,7 +6,7 @@ import os
 import sys
 import matplotlib.pyplot as plt
 
-# 🧬 RESEARCH BRIDGE: Ensure GNN definitions are available for unpickling
+#  RESEARCH BRIDGE: Ensure GNN definitions are available for unpickling
 try:
     import torch
     import torch.nn.functional as F

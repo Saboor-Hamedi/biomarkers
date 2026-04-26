@@ -156,34 +156,17 @@ classes = np.unique(y_train)
 weights = compute_class_weight("balanced", classes=classes, y=y_train)
 class_weight_dict = dict(zip(classes, weights))
 
+from logistic_model import get_logistic_model
+from random_forest_model import get_random_forest_model
+from svm_model import get_svm_model
+from xgboost_model import get_xgboost_model
+from gnn_model import train_gnn
+
 models = {
-    "Logistic_Regression": LogisticRegression(
-        random_state=42, max_iter=1000, class_weight="balanced", C=1.0
-    ),
-    "Random_Forest": RandomForestClassifier(
-        n_estimators=100,
-        random_state=42,
-        class_weight="balanced",
-        max_depth=10,
-        min_samples_split=5,
-    ),
-    "SVM": SVC(
-        kernel="rbf",
-        probability=True,
-        random_state=42,
-        class_weight="balanced",
-        C=1.0,
-        gamma="scale",
-    ),
-    "XGBoost": XGBClassifier(
-        n_estimators=100,
-        random_state=42,
-        scale_pos_weight=(len(y_train[y_train == 0]) / len(y_train[y_train == 1])),
-        eval_metric="logloss",
-        use_label_encoder=False,
-        max_depth=6,
-        learning_rate=0.1,
-    ),
+    "Logistic_Regression": get_logistic_model(),
+    "Random_Forest": get_random_forest_model(),
+    "SVM": get_svm_model(),
+    "XGBoost": get_xgboost_model(y_train),
 }
 
 print("Models initialized:")
@@ -194,213 +177,48 @@ for name in models.keys():
 # ### Graph Neural Network (GNN) Classifier
 # 
 
-# In[7]:
+# GNN training is imported from gnn_model.py
 
+# Call the GNN training function
+gnn_res, gnn_mod = train_gnn(X_train, y_train, X_val, y_val, feature_columns, X_scaled)
+if gnn_res and gnn_mod:
+    results["GNN"] = gnn_res
+    trained_models["GNN"] = gnn_mod
 
-# GNN requires PyTorch and PyG libraries
-try:
-    import torch
-    import torch.nn.functional as F
-    from torch_geometric.data import Data, DataLoader
-    from torch_geometric.nn import GCNConv, global_mean_pool
-
-    class GNNModel(torch.nn.Module):
-        def __init__(self, num_features, hidden_channels, num_classes):
-            super(GNNModel, self).__init__()
-            self.conv1 = GCNConv(num_features, hidden_channels)
-            self.conv2 = GCNConv(hidden_channels, hidden_channels)
-            self.lin = torch.nn.Linear(hidden_channels, num_classes)
-
-        def forward(self, x, edge_index, batch):
-            x = self.conv1(x, edge_index)
-            x = x.relu()
-            x = self.conv2(x, edge_index)
-            x = x.relu()
-            x = global_mean_pool(x, batch)
-            x = self.lin(x)
-            return x
-
-    # Build correlation-based graph from features
-    print("Building correlation graph from biomarkers...")
-    corr_matrix = pd.DataFrame(X_scaled, columns=feature_columns).corr()
-    edges = []
-    for i in range(len(corr_matrix.columns)):
-        for j in range(i + 1, len(corr_matrix.columns)):
-            if abs(corr_matrix.iloc[i, j]) > 0.3:  # Only keep strong correlations
-                edges.append([i, j])
-                edges.append([j, i])  # Bidirectional
-
-    if not edges:
-        edges = [[0, 1], [1, 0]]  # Minimum connectivity
-
-    edge_index = torch.LongTensor(edges).t().contiguous()
-
-    # Create graph data objects
-    print("Creating GNN training data...")
-    train_data_list = []
-    for idx in range(len(X_train)):
-        x = (
-            torch.FloatTensor(X_train[idx])
-            .unsqueeze(0)
-            .expand(len(feature_columns), -1)
-        )
-        y = torch.LongTensor(
-            [y_train.iloc[idx] if hasattr(y_train, "iloc") else y_train[idx]]
-        )
-        data = Data(x=x, edge_index=edge_index, y=y)
-        train_data_list.append(data)
-
-    val_data_list = []
-    for idx in range(len(X_val)):
-        x = torch.FloatTensor(X_val[idx]).unsqueeze(0).expand(len(feature_columns), -1)
-        y = torch.LongTensor(
-            [y_val.iloc[idx] if hasattr(y_val, "iloc") else y_val[idx]]
-        )
-        data = Data(x=x, edge_index=edge_index, y=y)
-        val_data_list.append(data)
-
-    train_loader = DataLoader(train_data_list, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_data_list, batch_size=16, shuffle=False)
-
-    # Initialize and train GNN
-    print("\nTraining Graph Neural Network...")
-    gnn_model = GNNModel(
-        num_features=len(feature_columns), hidden_channels=32, num_classes=2
-    )
-    optimizer = torch.optim.Adam(gnn_model.parameters(), lr=0.01)
-    criterion = torch.nn.CrossEntropyLoss()
-
-    best_val_loss = float("inf")
-    for epoch in range(50):
-        gnn_model.train()
-        train_loss = 0
-        for batch in train_loader:
-            optimizer.zero_grad()
-            out = gnn_model(
-                batch.x,
-                batch.edge_index,
-                (
-                    batch.batch
-                    if hasattr(batch, "batch")
-                    else torch.zeros(batch.x.size(0), dtype=torch.long)
-                ),
-            )
-            loss = criterion(out, batch.y.squeeze())
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
-
-        gnn_model.eval()
-        val_loss = 0
-        with torch.no_grad():
-            for batch in val_loader:
-                out = gnn_model(
-                    batch.x,
-                    batch.edge_index,
-                    (
-                        batch.batch
-                        if hasattr(batch, "batch")
-                        else torch.zeros(batch.x.size(0), dtype=torch.long)
-                    ),
-                )
-                loss = criterion(out, batch.y.squeeze())
-                val_loss += loss.item()
-
-        if (epoch + 1) % 10 == 0:
-            print(
-                f"Epoch {epoch+1:3d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"
-            )
-
-    # GNN Predictions
-    print("\nEvaluating GNN on validation set...")
-    gnn_model.eval()
-    y_gnn_pred = []
-    y_gnn_proba = []
-    with torch.no_grad():
-        for batch in val_loader:
-            out = gnn_model(
-                batch.x,
-                batch.edge_index,
-                (
-                    batch.batch
-                    if hasattr(batch, "batch")
-                    else torch.zeros(batch.x.size(0), dtype=torch.long)
-                ),
-            )
-            probs = F.softmax(out, dim=1)
-            y_gnn_pred.extend(probs.argmax(dim=1).numpy())
-            y_gnn_proba.extend(probs[:, 1].numpy())
-
-    y_gnn_pred = np.array(y_gnn_pred)
-    y_gnn_proba = np.array(y_gnn_proba)
-
-    # Calculate GNN metrics
-    results["GNN"] = {
-        "accuracy": accuracy_score(y_val, y_gnn_pred),
-        "precision": precision_score(y_val, y_gnn_pred, zero_division=0),
-        "recall": recall_score(y_val, y_gnn_pred, zero_division=0),
-        "f1_score": f1_score(y_val, y_gnn_pred, zero_division=0),
-        "roc_auc": roc_auc_score(y_val, y_gnn_proba),
-        "confusion_matrix": confusion_matrix(y_val, y_gnn_pred),
-        "y_pred": y_gnn_pred,
-        "y_pred_proba": y_gnn_proba,
-    }
-
-    trained_models["GNN"] = gnn_model
-
-    print("\n✅ GNN Model trained successfully!")
-    print(f"  Validation Accuracy: {results['GNN']['accuracy']:.4f}")
-    print(f"  Validation F1-Score: {results['GNN']['f1_score']:.4f}")
-    print(f"  Validation ROC-AUC: {results['GNN']['roc_auc']:.4f}")
-
-except ImportError:
-    print("⚠️  PyTorch or PyG not installed. GNN training skipped.")
-    print("   Install with: pip install torch torch-geometric")
 
     # ── CLINICAL DASHBOARD INTEGRATION ──
-    # Wrap and save the trained GNN using the app's GNNClassifier
+    # Wrap and save the trained GNN
     try:
-        import sys, os, pickle
-        import pandas as pd
-        sys.path.append(os.path.abspath('../../'))
-        from logic.model_manager import GNNClassifier
-
-        gnn_wrapper = GNNClassifier(num_features=len(feature_columns), hidden_channels=32, num_classes=2)
-        gnn_wrapper.model = gnn_model
-        gnn_wrapper.feature_names = feature_columns
-        gnn_wrapper._build_graph(pd.DataFrame(X_train, columns=feature_columns))
+        import os, pickle
+        import torch
 
         save_dir = "../models/"
         os.makedirs(save_dir, exist_ok=True)
         gnn_path = os.path.join(save_dir, "gnn_model.pkl")
+        
+        print(f"  Attempting to save GNN model to {gnn_path}...")
+        
+        # Build the package first to ensure no errors before file creation
+        edge_index = torch.LongTensor([[0, 1], [1, 0]]).t().contiguous()
+        gnn_package = {
+            "model": gnn_mod,
+            "feature_names": feature_columns,
+            "edge_index": edge_index
+        }
+        
         with open(gnn_path, "wb") as file:
-            pickle.dump(gnn_wrapper, file)
-        print(f"✓ Saved compatible GNN to {gnn_path}")
+            pickle.dump(gnn_package, file)
+            file.flush()
+            os.fsync(file.fileno())
+            
+        if os.path.getsize(gnn_path) > 0:
+            print(f"  ✓ Saved compatible GNN to {gnn_path} ({os.path.getsize(gnn_path)} bytes)")
+        else:
+            print(f"  ⚠️ Warning: GNN model file saved but is 0 bytes.")
     except Exception as e:
-        print(f"⚠️ Failed to wrap and save GNN: {e}")
-
-
-    # ── CLINICAL DASHBOARD INTEGRATION ──
-    # Wrap and save the trained GNN using the app's GNNClassifier
-    try:
-        import sys, os, pickle
-        import pandas as pd
-        sys.path.append(os.path.abspath('../../'))
-        from logic.model_manager import GNNClassifier
-
-        gnn_wrapper = GNNClassifier(num_features=len(feature_columns), hidden_channels=32, num_classes=2)
-        gnn_wrapper.model = gnn_model
-        gnn_wrapper.feature_names = feature_columns
-        gnn_wrapper._build_graph(pd.DataFrame(X_train, columns=feature_columns))
-
-        save_dir = "../models/"
-        os.makedirs(save_dir, exist_ok=True)
-        gnn_path = os.path.join(save_dir, "gnn_model.pkl")
-        with open(gnn_path, "wb") as file:
-            pickle.dump(gnn_wrapper, file)
-        print(f"✓ Saved compatible GNN to {gnn_path}")
-    except Exception as e:
-        print(f"⚠️ Failed to wrap and save GNN: {e}")
+        print(f"  ⚠️ Failed to wrap and save GNN: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 # ### Train Models and Save as .pkl
@@ -657,7 +475,12 @@ print("\n✓ Updated model comparison saved to 'model_comparison_with_gnn.csv'")
 # In[12]:
 
 
-fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+import math
+num_models = len(results)
+cols = 2
+rows = math.ceil(num_models / cols)
+
+fig, axes = plt.subplots(rows, cols, figsize=(12, 5 * rows))
 axes = axes.ravel()
 
 for idx, (name, result) in enumerate(results.items()):
@@ -677,10 +500,17 @@ for idx, (name, result) in enumerate(results.items()):
     axes[idx].set_xlabel("Predicted")
     axes[idx].set_ylabel("Actual")
 
+# Hide any unused axes
+for idx in range(num_models, len(axes)):
+    axes[idx].set_visible(False)
+
+import os
+os.makedirs("../figure", exist_ok=True)
+
 plt.tight_layout()
-plt.savefig("confusion_matrices.png", dpi=150, bbox_inches="tight")
+plt.savefig("../figure/confusion_matrices.png", dpi=150, bbox_inches="tight")
 plt.show()
-print("✓ Confusion matrices saved as 'confusion_matrices.png'")
+print("✓ Confusion matrices saved as '../figure/confusion_matrices.png'")
 
 
 # ### ROC Curves
@@ -701,9 +531,9 @@ plt.ylabel("True Positive Rate (Sensitivity)", fontsize=12)
 plt.title("ROC Curves - Model Comparison", fontsize=14)
 plt.legend(loc="lower right", fontsize=10)
 plt.grid(alpha=0.3)
-plt.savefig("roc_curves.png", dpi=150, bbox_inches="tight")
+plt.savefig("../figure/roc_curves.png", dpi=150, bbox_inches="tight")
 plt.show()
-print("✓ ROC curves saved as 'roc_curves.png'")
+print("✓ ROC curves saved as '../figure/roc_curves.png'")
 
 
 # ### Precision-Recall Curves
@@ -723,9 +553,9 @@ plt.ylabel("Precision", fontsize=12)
 plt.title("Precision-Recall Curves", fontsize=14)
 plt.legend(loc="best", fontsize=10)
 plt.grid(alpha=0.3)
-plt.savefig("precision_recall_curves.png", dpi=150, bbox_inches="tight")
+plt.savefig("../figure/precision_recall_curves.png", dpi=150, bbox_inches="tight")
 plt.show()
-print("✓ Precision-Recall curves saved as 'precision_recall_curves.png'")
+print("✓ Precision-Recall curves saved as '../figure/precision_recall_curves.png'")
 
 
 # ### Feature Importance (Random Forest & XGBoost)
@@ -758,9 +588,9 @@ axes[1].set_title("XGBoost - Feature Importance", fontsize=12)
 axes[1].grid(alpha=0.3, axis="x")
 
 plt.tight_layout()
-plt.savefig("feature_importance.png", dpi=150, bbox_inches="tight")
+plt.savefig("../figure/feature_importance.png", dpi=150, bbox_inches="tight")
 plt.show()
-print("✓ Feature importance saved as 'feature_importance.png'")
+print("✓ Feature importance saved as '../figure/feature_importance.png'")
 
 
 # ### Advanced Visualizations: t-SNE & Dimensionality Reduction
@@ -883,9 +713,9 @@ cbar3 = plt.colorbar(scatter6, ax=axes[1, 1])
 cbar3.set_label("Prediction Probability")
 
 plt.tight_layout()
-plt.savefig("tsne_pca_visualization.png", dpi=150, bbox_inches="tight")
+plt.savefig("../figure/tsne_pca_visualization.png", dpi=150, bbox_inches="tight")
 plt.show()
-print("✓ t-SNE and PCA visualizations saved as 'tsne_pca_visualization.png'")
+print("✓ t-SNE / PCA visualization saved as '../figure/tsne_pca_visualization.png'")
 
 
 # ### Biomarker Trajectory & Feature Space Analysis
@@ -893,7 +723,8 @@ print("✓ t-SNE and PCA visualizations saved as 'tsne_pca_visualization.png'")
 
 # In[17]:
 
-
+import torch
+import torch.nn.functional as F
 # CONVERT y FROM TENSOR TO PANDAS SERIES
 print("Converting y from tensor to pandas Series...")
 
@@ -909,7 +740,7 @@ else:
     print(f"y is already type: {type(y)}")
 
 # Also ensure X_scaled is numpy array
-if isinstance(X_scaled, torch.Tensor):
+if type(X_scaled).__name__ == "Tensor":
     X_scaled = X_scaled.cpu().numpy()
     print(f"✓ Converted X_scaled from tensor to numpy array")
     print(f"  X_scaled shape: {X_scaled.shape}")
@@ -955,7 +786,7 @@ if len(y) != X_scaled.shape[0]:
             print(f"   Restored y from df_clean: {len(y)} samples")
         else:
             # Reload data
-            df = pd.read_excel('Raw_data_dpv.xlsx', sheet_name='Target_Concentrations')
+            df = pd.read_excel('../data/Raw_data_dpv.xlsx', sheet_name='Target_Concentrations')
             PSA_CUTOFF = 4000
             df['high_risk'] = (df['PSA_pg_per_ml'] > PSA_CUTOFF).astype(int)
             feature_cols = ['AFP_pg_per_ml', 'CA125_U_per_ml']
@@ -1093,9 +924,9 @@ ax5.set_ylabel("Precision")
 ax5.set_title("Precision-Recall Trade-off", fontsize=12, fontweight="bold")
 ax5.grid(alpha=0.3)
 
-plt.savefig("model_performance_comparison.png", dpi=150, bbox_inches="tight")
+plt.savefig("../figure/model_performance_comparison.png", dpi=150, bbox_inches="tight")
 plt.show()
-print("✓ Model performance comparison saved as 'model_performance_comparison.png'")
+print("✓ Model comparison saved as '../figure/model_performance_comparison.png'")
 
 
 # ### Correlation & Prediction Error Analysis
@@ -1172,9 +1003,9 @@ axes[1, 1].legend(loc="lower right")
 axes[1, 1].grid(alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("correlation_error_analysis.png", dpi=150, bbox_inches="tight")
+plt.savefig("../figure/correlation_error_analysis.png", dpi=150, bbox_inches="tight")
 plt.show()
-print("✓ Correlation and error analysis saved as 'correlation_error_analysis.png'")
+print("✓ Correlation error analysis saved as '../figure/correlation_error_analysis.png'")
 
 
 # ### Calibration Curves & Risk Distribution
@@ -1322,9 +1153,9 @@ axes[1, 1].set_title("Risk Stratification Summary", fontsize=12, fontweight="bol
 axes[1, 1].grid(alpha=0.3, axis="y")
 
 plt.tight_layout()
-plt.savefig("calibration_risk_analysis.png", dpi=150, bbox_inches="tight")
+plt.savefig("../figure/calibration_risk_analysis.png", dpi=150, bbox_inches="tight")
 plt.show()
-print("✓ Calibration and risk analysis saved as 'calibration_risk_analysis.png'")
+print("✓ Calibration and Risk Analysis saved as '../figure/calibration_risk_analysis.png'")
 
 
 # ### Cross-Validation on Best Model
