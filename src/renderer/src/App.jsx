@@ -5,7 +5,7 @@ import ArtifactPicker from './components/ArtifactPicker'
 import StatCard from './components/StatCard'
 import ForensicInput from './components/ForensicInput'
 import CommitteeReview from './components/CommitteeReview'
-import VisualAnalytics from './components/VisualAnalytics'
+import Visual from './components/Visual'
 import PatientDetailModal from './components/PatientDetailModal'
 import ChatBot from './components/ChatBot'
 import SettingsModal from './components/SettingsModal'
@@ -26,6 +26,7 @@ function App() {
   const [boundariesData, setBoundariesData] = useState(null)
   const [heatmapData, setHeatmapData] = useState(null)
   const [counterfactualData, setCounterfactualData] = useState(null)
+  const [calibrationRiskData, setCalibrationRiskData] = useState(null)
   const [topPatients, setTopPatients] = useState([])
   const [visibleCount, setVisibleCount] = useState(10)
   const [selectedPatient, setSelectedPatient] = useState(null)
@@ -36,9 +37,7 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [auditHistory, setAuditHistory] = useState([])
   const [inputs, setInputs] = useState({
-    AFP_pg_per_ml: 0,
-    CA125_U_per_ml: 0,
-    PSA_pg_per_ml: 0
+    sample_id: 'Sample_0001'
   })
   const [resetKey, setResetKey] = useState(0)
   const abortControllerRef = useRef(null)
@@ -59,6 +58,14 @@ function App() {
           console.error('Ranking fetch failed:', topData.error)
         }
       }
+
+      // Check syncing state if we have a callback
+      if (isSyncing && data.status === 'ready') {
+        setIsSyncing(false)
+        fetchVisuals()
+      } else {
+        setEngineStatus(data.status)
+      }
     } catch (err) {
       console.error('IPC fetch failed', err)
     }
@@ -66,14 +73,15 @@ function App() {
 
   const fetchVisuals = useCallback(async () => {
     try {
-      const [tsneRes, metricsRes, importanceRes, distRes, boundRes, heatRes, perfRes] = await Promise.all([
-        fetch('http://127.0.0.1:8000/tsne'),
-        fetch('http://127.0.0.1:8000/metrics'),
-        fetch('http://127.0.0.1:8000/importance'),
-        fetch('http://127.0.0.1:8000/distributions'),
-        fetch('http://127.0.0.1:8000/boundaries'),
-        fetch('http://127.0.0.1:8000/heatmap'),
-        fetch('http://127.0.0.1:8000/performance')
+      const [tsneRes, metricsRes, importanceRes, distRes, boundRes, heatRes, perfRes, calRiskRes] = await Promise.all([
+        fetch('http://127.0.0.1:8001/tsne'),
+        fetch('http://127.0.0.1:8001/metrics'),
+        fetch('http://127.0.0.1:8001/importance'),
+        fetch('http://127.0.0.1:8001/distributions'),
+        fetch('http://127.0.0.1:8001/boundaries'),
+        fetch('http://127.0.0.1:8001/heatmap'),
+        fetch('http://127.0.0.1:8001/performance'),
+        fetch('http://127.0.0.1:8001/calibration-risk')
       ])
       const tsne = await tsneRes.json()
       const metricsData = await metricsRes.json()
@@ -82,6 +90,7 @@ function App() {
       const bounds = await boundRes.json()
       const heat = await heatRes.json()
       const perf = await perfRes.json()
+      const calRisk = await calRiskRes.json()
       setTsneData(tsne)
       setMetrics(metricsData)
       setImportanceData(importance)
@@ -89,6 +98,7 @@ function App() {
       setBoundariesData(bounds)
       setHeatmapData(heat)
       if (Array.isArray(perf)) setPerformanceData(perf)
+      if (calRisk && !calRisk.error) setCalibrationRiskData(calRisk)
     } catch (err) {
       console.error('Visuals fetch failed', err)
     }
@@ -101,10 +111,12 @@ function App() {
   }, [fetchStatus])
 
   useEffect(() => {
-    if (['committee', 'trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution'].includes(activeTab)) {
-      fetchVisuals()
+    if (['committee', 'trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'roc', 'pr', 'cm', 'tsne', 'importance', 'distribution', 'calibration-risk'].includes(activeTab)) {
+      if (!tsneData) {
+        fetchVisuals()
+      }
     }
-  }, [activeTab, fetchVisuals])
+  }, [activeTab, fetchVisuals, tsneData])
 
   const handlePredict = async () => {
     if (abortControllerRef.current) {
@@ -115,10 +127,10 @@ function App() {
 
     setLoading(true)
     try {
-      const response = await fetch('http://127.0.0.1:8000/predict', {
+      const response = await fetch('http://127.0.0.1:8001/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ features: inputs }),
+        body: JSON.stringify({ sample_id: inputs.sample_id }),
         signal
       })
       const data = await response.json()
@@ -126,9 +138,9 @@ function App() {
       
       try {
         const [trajRes, shapRes, cfRes] = await Promise.all([
-          fetch('http://127.0.0.1:8000/trajectory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }), signal }),
-          fetch('http://127.0.0.1:8000/shap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }), signal }),
-          fetch('http://127.0.0.1:8000/counterfactual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: inputs }), signal })
+          fetch('http://127.0.0.1:8001/trajectory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: inputs.sample_id }), signal }),
+          fetch('http://127.0.0.1:8001/shap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: inputs.sample_id }), signal }),
+          fetch('http://127.0.0.1:8001/counterfactual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: inputs.sample_id }), signal })
         ])
         const trajData = await trajRes.json()
         const shapDataJson = await shapRes.json()
@@ -192,7 +204,7 @@ function App() {
         accent: 'border-gray-800'
       },
       {
-        label: 'Consensus',
+        label: 'Model Agreement',
         value: prediction ? prediction.consensus : '0.0%',
         icon: TrendingUp,
         color: 'text-blue-400',
@@ -203,7 +215,7 @@ function App() {
   )
 
   // Analytic tabs mapping
-  const isAnalyticTab = ['trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'influence', 'tsne', 'distribution', 'metrics', 'roc', 'pr', 'cm', 'importance'].includes(
+  const isAnalyticTab = ['trajectory', 'shap', 'boundaries', 'heatmap', 'counterfactual', 'calibration', 'calibration-risk', 'influence', 'tsne', 'distribution', 'metrics', 'roc', 'pr', 'cm', 'importance'].includes(
     activeTab
   )
 
@@ -219,14 +231,14 @@ function App() {
               <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto pb-20">
                 <header className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <Activity className="text-blue-500" size={18} />
-                    <h1 className="text-lg font-black tracking-tight text-white uppercase italic">
+                    
+                    <h1 className="text-base font-bold tracking-tight text-white">
                       Forensic Overview
                     </h1>
                   </div>
                   <button
                     onClick={handleReset}
-                    className="px-4 py-1.5 border border-red-900/30 text-red-500 text-[8px] font-bold uppercase tracking-widest rounded hover:bg-red-500 hover:text-white transition-all"
+                    className="px-4 py-1.5 border border-red-900/30 text-red-500 text-[8px] font-bold tracking-widest rounded hover:bg-red-500 hover:text-white transition-all"
                   >
                     Reset System
                   </button>
@@ -271,17 +283,17 @@ function App() {
             {activeTab === 'committee' && (
               <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-black uppercase tracking-tight italic">
+                  <h2 className="text-lg font-black tracking-tight">
                     Committee Performance Audit
                   </h2>
-                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                  <p className="text-[10px] text-gray-500 font-bold tracking-widest">
                     Model Consensus Comparison
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <CommitteeReview artifacts={artifacts} prediction={prediction} />
-                  <div className="bg-[#0d1117] border border-gray-800 rounded-lg p-8">
-                    <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-500 mb-8 flex items-center gap-2">
+                  <CommitteeReview artifacts={artifacts} prediction={prediction} metrics={metrics} />
+                  <div className="bg-[#0d1117] border border-gray-800 rounded p-8 h-[450px] overflow-y-auto custom-scrollbar pr-2">
+                    <h3 className="text-[10px] font-bold tracking-[0.2em] text-blue-500 mb-8 flex items-center gap-2">
                       <Activity size={14} className="text-blue-500" />
                       Global Biomarker Influence
                     </h3>
@@ -298,13 +310,13 @@ function App() {
                           .sort((a, b) => b[1] - a[1])
                           .map(([feature, weight], i) => (
                             <div key={i} className="space-y-2">
-                              <div className="flex justify-between text-[9px] font-black uppercase tracking-widest">
+                              <div className="flex justify-between text-[9px] font-black tracking-widest">
                                 <span className="text-gray-400">{feature.replace(/_/g, ' ')}</span>
                                 <span className="text-white font-mono">
                                   {(weight * 100).toFixed(1)}%
                                 </span>
                               </div>
-                              <div className="h-1 bg-gray-900 rounded-full overflow-hidden">
+                              <div className="h-1 bg-gray-900 rounded overflow-hidden">
                                 <div
                                   className="h-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.4)] transition-all duration-1000"
                                   style={{ width: `${weight * 100}%` }}
@@ -315,7 +327,7 @@ function App() {
                       ) : (
                         <div className="py-12 flex flex-col items-center justify-center text-center opacity-30">
                           <Activity size={32} className="text-gray-600 mb-2" />
-                          <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">
+                          <p className="text-[8px] font-bold text-gray-500 tracking-widest">
                             Audit Required
                           </p>
                         </div>
@@ -325,25 +337,25 @@ function App() {
                 </div>
                 
                 {/* Model Performance Summary Table */}
-                <div className="bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden">
+                <div className="bg-[#0d1117] border border-gray-800 rounded overflow-hidden">
                   <div className="p-6 border-b border-gray-800 flex items-center justify-between bg-black/20">
-                    <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-500 flex items-center gap-2">
+                    <h3 className="text-[10px] font-bold tracking-[0.2em] text-blue-500 flex items-center gap-2">
                       <TrendingUp size={14} className="text-blue-500" />
                       Model Performance Summary
                     </h3>
-                    <span className="text-[9px] bg-blue-500/10 text-blue-500 px-2 py-1 rounded border border-blue-500/20 font-black uppercase tracking-widest">
+                    <span className="text-[9px] bg-blue-500/10 text-blue-500 px-2 py-1 rounded border border-blue-500/20 font-black tracking-widest">
                       Threshold = 0.5
                     </span>
                   </div>
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-black/50">
                       <tr>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Neural Model</th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Accuracy</th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Precision</th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">Recall</th>
-                        <th className="p-4 text-[9px] font-bold text-blue-500 uppercase tracking-widest border-b border-gray-800">F1-Score</th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">ROC-AUC</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">Neural Model</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">Accuracy</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">Precision</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">Recall</th>
+                        <th className="p-4 text-[9px] font-bold text-blue-500 tracking-widest border-b border-gray-800">F1-Score</th>
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">ROC-AUC</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800/50">
@@ -351,7 +363,7 @@ function App() {
                         <tr key={i} className={cn("transition-colors", model.highlight ? "bg-blue-900/10 hover:bg-blue-900/20" : "hover:bg-white/5")}>
                           <td className="p-4 text-[10px] font-bold text-white flex items-center gap-2">
                             {model.name}
-                            {model.highlight && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2 uppercase font-black">Best</span>}
+                            {model.highlight && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2 font-black">Best</span>}
                           </td>
                           <td className="p-4 text-[10px] font-mono text-gray-400">{model.acc}</td>
                           <td className="p-4 text-[10px] font-mono text-gray-400">{model.prec}</td>
@@ -361,7 +373,7 @@ function App() {
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="6" className="p-12 text-center text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                          <td colSpan="6" className="p-12 text-center text-[10px] font-bold text-gray-500 tracking-widest">
                             {engineStatus === 'ready' ? 'Loading metrics...' : 'Audit Required'}
                           </td>
                         </tr>
@@ -377,38 +389,38 @@ function App() {
               <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <TrendingUp className="text-blue-500" size={18} />
-                    <h2 className="text-lg font-black uppercase tracking-tight italic">
+                    
+                    <h2 className="text-lg font-black tracking-tight">
                       Patient Risk Ranking (Top 50)
                     </h2>
                   </div>
-                  <span className="text-[9px] bg-blue-500/10 text-blue-500 px-2 py-1 rounded border border-blue-500/20 font-black uppercase tracking-widest">
+                  <span className="text-[9px] bg-blue-500/10 text-blue-500 px-2 py-1 rounded border border-blue-500/20 font-black tracking-widest">
                     Global Audit Scan
                   </span>
                 </div>
-                <div className="bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden">
+                <div className="bg-[#0d1117] border border-gray-800 rounded overflow-hidden">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-black/50">
                       <tr>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 text-center w-16">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800 text-center w-16">
                           Rank
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           Sample ID
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           AFP
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           CA125
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           PSA
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           Neural Score
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           Status
                         </th>
                       </tr>
@@ -436,7 +448,7 @@ function App() {
                             <td className="p-4">
                               <span
                                 className={cn(
-                                  'text-[8px] font-black uppercase px-2 py-1 rounded-full border',
+                                  'text-[8px] font-black px-2 py-1 rounded border',
                                   pt.status === 'Urgent'
                                     ? 'text-red-500 border-red-500/30 bg-red-500/10'
                                     : pt.status === 'Critical'
@@ -455,7 +467,7 @@ function App() {
                         <tr>
                           <td
                             colSpan="6"
-                            className="p-20 text-center text-[10px] font-bold text-gray-600 uppercase tracking-widest"
+                            className="p-20 text-center text-[10px] font-bold text-gray-600 tracking-widest"
                           >
                             {artifacts.length === 0
                               ? 'Engine Offline: Calibrate artifacts to begin audit'
@@ -474,10 +486,10 @@ function App() {
                         onClick={() => setVisibleCount((prev) => prev + 20)}
                         className="group flex flex-col items-center gap-2"
                       >
-                        <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-500 group-hover:text-blue-500 transition-colors">
+                        <span className="text-[8px] font-black tracking-[0.3em] text-gray-500 group-hover:text-blue-500 transition-colors">
                           Show More
                         </span>
-                        <div className="w-12 h-1 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="w-12 h-1 bg-gray-800 rounded overflow-hidden">
                           <div className="w-0 group-hover:w-full h-full bg-blue-500 transition-all duration-500" />
                         </div>
                       </button>
@@ -488,10 +500,10 @@ function App() {
                         onClick={() => setVisibleCount(10)}
                         className="group flex flex-col items-center gap-2"
                       >
-                        <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-500 group-hover:text-red-500 transition-colors">
+                        <span className="text-[8px] font-black tracking-[0.3em] text-gray-500 group-hover:text-red-500 transition-colors">
                           Show Less
                         </span>
-                        <div className="w-12 h-1 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="w-12 h-1 bg-gray-800 rounded overflow-hidden">
                           <div className="w-0 group-hover:w-full h-full bg-red-500 transition-all duration-500" />
                         </div>
                       </button>
@@ -504,30 +516,30 @@ function App() {
             {activeTab === 'registry' && (
               <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-black uppercase tracking-tight italic">
+                  <h2 className="text-lg font-black tracking-tight">
                     Audit Registry Archive
                   </h2>
                   <span className="text-[9px] bg-green-500/10 text-green-500 px-2 py-1 rounded border border-green-500/20">
                     {auditHistory.length} Entries Total
                   </span>
                 </div>
-                <div className="bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden">
+                <div className="bg-[#0d1117] border border-gray-800 rounded overflow-hidden">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-black/50">
                       <tr>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 text-center w-16">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800 text-center w-16">
                           #
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           Timestamp
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           Neural Score
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800">
                           Verdict
                         </th>
-                        <th className="p-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 text-right">
+                        <th className="p-4 text-[9px] font-bold text-gray-500 tracking-widest border-b border-gray-800 text-right">
                           Scope
                         </th>
                       </tr>
@@ -547,7 +559,7 @@ function App() {
                           <td className="p-4">
                             <span
                               className={cn(
-                                'text-[8px] font-black uppercase px-2 py-1 rounded-full border',
+                                'text-[8px] font-black px-2 py-1 rounded border',
                                 item.score > 0.5
                                   ? 'text-red-500 border-red-500/30 bg-red-500/10'
                                   : 'text-green-500 border-green-500/30 bg-green-500/10'
@@ -556,7 +568,7 @@ function App() {
                               {item.verdict}
                             </span>
                           </td>
-                          <td className="p-4 text-[9px] text-gray-600 text-right uppercase font-bold group-hover:text-gray-400 transition-colors italic">
+                          <td className="p-4 text-[9px] text-gray-600 text-right font-bold group-hover:text-gray-400 transition-colors">
                             Clinical Artifact
                           </td>
                         </tr>
@@ -565,7 +577,7 @@ function App() {
                         <tr>
                           <td
                             colSpan="5"
-                            className="p-20 text-center text-[10px] font-bold text-gray-600 uppercase tracking-widest"
+                            className="p-20 text-center text-[10px] font-bold text-gray-600 tracking-widest"
                           >
                             Registry Database Empty
                           </td>
@@ -578,7 +590,7 @@ function App() {
             )}
 
             {isAnalyticTab && (
-              <VisualAnalytics
+              <Visual
                 activeTab={activeTab}
                 prediction={prediction}
                 tsneData={tsneData}
@@ -590,6 +602,7 @@ function App() {
                 boundariesData={boundariesData}
                 heatmapData={heatmapData}
                 counterfactualData={counterfactualData}
+                calibrationRiskData={calibrationRiskData}
                 inputs={inputs}
               />
             )}

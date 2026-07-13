@@ -7,13 +7,13 @@ const StatCard = ({ label, value, icon: Icon, color, accent }) => {
       accent
     )}>
       <div className="flex items-center justify-between">
-        <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{label}</span>
+        <span className="text-[9px] font-bold text-gray-500 tracking-widest">{label}</span>
         <Icon size={14} className={color} />
       </div>
       <div className={cn("text-2xl font-black tracking-tighter", color)}>
         {value}
       </div>
-      <div className="text-[8px] font-medium text-gray-600 uppercase">System Feedback</div>
+      <div className="text-[8px] font-medium text-gray-600">System Feedback</div>
     </div>
   )
 }

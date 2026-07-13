@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join, basename } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -7,7 +7,16 @@ import fs from 'fs'
 
 let pyProcess = null
 
-function startPythonServer() {
+async function startPythonServer() {
+  try {
+    // Attempt to gracefully shut down any existing zombie process
+    await fetch('http://127.0.0.1:8001/shutdown', { method: 'POST' }).catch(() => {})
+    // Give it a brief moment to shut down
+    await new Promise(resolve => setTimeout(resolve, 500))
+  } catch (err) {
+    // Ignore errors if server wasn't running
+  }
+  
   const script = join(__dirname, '../../server/main.py')
   pyProcess = spawn('python', [script])
   pyProcess.stdout.on('data', (data) => console.log(`Python: ${data}`))
@@ -46,13 +55,16 @@ function createWindow() {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
+  Menu.setApplicationMenu(null)
   app.on('browser-window-created', (_, window) => {
+    window.autoHideMenuBar = true
+    window.setMenuBarVisibility(false)
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC: Synchronize Artifacts
+  // IPC: Synchronize Artifacts — copies .pkl files to server/analysis/models/
   ipcMain.handle('sync-artifacts', async (event, filePaths) => {
-    const destDir = join(app.getAppPath(), 'server', 'artifacts')
+    const destDir = join(app.getAppPath(), 'server', 'analysis', 'models')
     if (!fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true })
     }
@@ -70,21 +82,14 @@ app.whenReady().then(() => {
     return results
   })
 
-  // IPC: Reset Artifacts
+  // IPC: Reset Artifacts — clears UI state only, does NOT delete model files
   ipcMain.handle('reset-artifacts', async () => {
-    const destDir = join(app.getAppPath(), 'server', 'artifacts')
-    if (fs.existsSync(destDir)) {
-      const files = fs.readdirSync(destDir)
-      for (const file of files) {
-        fs.unlinkSync(join(destDir, file))
-      }
-    }
     return { status: 'success' }
   })
 
   ipcMain.handle('check-audit-status', async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/audit')
+      const response = await fetch('http://127.0.0.1:8001/audit')
       if (!response.ok) return { error: 'Server Offline' }
       return await response.json()
     } catch (err) {
@@ -94,7 +99,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('check-top-patients', async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/top-patients')
+      const response = await fetch('http://127.0.0.1:8001/top-patients')
       if (!response.ok) return { error: 'Server Offline' }
       return await response.json()
     } catch (err) {

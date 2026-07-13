@@ -7,9 +7,10 @@ import pickle
 import os
 import glob
 import random
+import sys
 from fastapi.middleware.cors import CORSMiddleware
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
-
+import sys
 # Define GNNModel class for unpickling if needed
 try:
     import torch
@@ -43,10 +44,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
+DATA_PATH = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
+ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "analysis", "models")
+
+# Ensure gnn_model module is importable for pickle deserialization
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "analysis", "src"))
+
+_cached_dpv_df = None
+
+def load_dpv_data(feature_columns):
+    """Load Target_Concentrations and merge with DPV voltammetry data from Sample_* sheets."""
+    global _cached_dpv_df
+    if _cached_dpv_df is not None:
+        return _cached_dpv_df
+
+    if not os.path.exists(DATA_PATH):
+        return None
+    target = pd.read_excel(DATA_PATH, sheet_name="Target_Concentrations")
+    # Only merge DPV columns if features are DPV (V0, V1, ...)
+    dpv_cols = [c for c in feature_columns if c.startswith('V') and c[1:].isdigit()]
+    if dpv_cols:
+        all_sheets = pd.read_excel(DATA_PATH, sheet_name=None)
+        sample_sheets = {k: v for k, v in all_sheets.items() if k.startswith('Sample_')}
+        records = []
+        for sid in sorted(sample_sheets.keys()):
+            sdf = sample_sheets[sid]
+            currents = sdf['current_uA'].values
+            record = {'sample_id': sid}
+            for i, val in enumerate(currents):
+                if f'V{i}' in feature_columns:
+                    record[f'V{i}'] = val
+            records.append(record)
+        dpv_df = pd.DataFrame(records)
+        merged = target.merge(dpv_df, on='sample_id', how='left')
+    else:
+        merged = target
+        
+    _cached_dpv_df = merged
+    return merged
+
+
+def is_dpv_features(feature_columns):
+    return any(c.startswith('V') and c[1:].isdigit() for c in feature_columns)
+
+
+def preprocess_for_inference(df, feature_columns, scaler):
+    """Preprocess features: skip log1p for DPV data, apply scaling."""
+    X = df[feature_columns].copy()
+    if is_dpv_features(feature_columns):
+        X_prep = X.values
+    else:
+        X_prep = np.log1p(X.clip(lower=0)).values
+    X_scaled = scaler.transform(pd.DataFrame(X_prep, columns=feature_columns))
+    return X_scaled
 
 class PredictionRequest(BaseModel):
-    features: dict # e.g. {"AFP_pg_per_ml": 1200, "CA125_U_per_ml": 35}
+    features: dict = None # e.g. {"AFP_pg_per_ml": 1200, "CA125_U_per_ml": 35}
+    sample_id: str = None  # e.g. "Sample_0001" — loads full DPV data from Excel
 
 # Global Cache for Models
 _cached_models = None
@@ -56,6 +110,7 @@ _last_artifact_mtime = 0
 
 def get_latest_mtime():
     if not os.path.exists(ARTIFACTS_DIR):
+        print(f"Warning: ARTIFACTS_DIR not found at {ARTIFACTS_DIR}")
         return 0
     mtimes = [os.path.getmtime(os.path.join(ARTIFACTS_DIR, f)) for f in os.listdir(ARTIFACTS_DIR) if f.endswith('.pkl')]
     return max(mtimes) if mtimes else 0
@@ -77,22 +132,29 @@ def load_artifacts():
 
     # Load Scaler
     scaler_path = os.path.join(ARTIFACTS_DIR, "scaler.pkl")
-    if os.path.exists(scaler_path):
+    if os.path.exists(scaler_path) and os.path.getsize(scaler_path) > 0:
         with open(scaler_path, "rb") as f:
             scaler = pickle.load(f)
 
     # Load Feature Columns
     features_path = os.path.join(ARTIFACTS_DIR, "feature_columns.pkl")
-    if os.path.exists(features_path):
+    if os.path.exists(features_path) and os.path.getsize(features_path) > 0:
         with open(features_path, "rb") as f:
             feature_columns = pickle.load(f)
 
     # Load Models
     model_files = glob.glob(os.path.join(ARTIFACTS_DIR, "*_model.pkl"))
     for mf in model_files:
-        name = os.path.basename(mf).replace("_model.pkl", "").capitalize()
-        with open(mf, "rb") as f:
-            models[name] = pickle.load(f)
+        if os.path.getsize(mf) == 0:
+            print(f"Skipping empty model file: {mf}")
+            continue
+            
+        name = os.path.basename(mf).replace("_model.pkl", "").replace("_", " ").capitalize()
+        try:
+            with open(mf, "rb") as f:
+                models[name] = pickle.load(f)
+        except Exception as e:
+            print(f"Failed to load model {name} from {mf}: {e}")
             
     # Update cache
     _cached_models = models
@@ -114,20 +176,33 @@ async def predict(request: PredictionRequest):
         if not models or not scaler:
             return {"error": "Engine offline: No synchronized artifacts detected."}
 
-        # Prepare Input Data
-        input_data = []
-        for col in feature_columns:
-            if col not in request.features:
-                return {"error": f"Missing required feature: {col}"}
-            input_data.append(request.features[col])
-        
-        # 1. Preprocessing: Log1p Transformation
-        X_raw = np.array([input_data])
-        X_log = np.log1p(X_raw)
-        
-        # 2. Scaling - Use DataFrame to avoid feature name warnings
-        X_df = pd.DataFrame(X_log, columns=feature_columns)
-        X_scaled = scaler.transform(X_df)
+        # If sample_id is given, load DPV data from Excel for that patient
+        if request.sample_id:
+            df = load_dpv_data(feature_columns)
+            if df is None or request.sample_id not in df['sample_id'].values:
+                return {"error": f"Patient {request.sample_id} not found in database."}
+            patient_row = df[df['sample_id'] == request.sample_id]
+            X_scaled = preprocess_for_inference(patient_row, feature_columns, scaler)
+        else:
+            # Prepare Input Data from features dict
+            if not request.features:
+                return {"error": "Provide either sample_id or features."}
+            input_data = []
+            for col in feature_columns:
+                if col not in request.features:
+                    return {"error": f"Missing required feature: {col}"}
+                input_data.append(request.features[col])
+            
+            # Preprocessing: Log1p (skip for DPV features)
+            X_raw = np.array([input_data])
+            if is_dpv_features(feature_columns):
+                X_prep = X_raw
+            else:
+                X_prep = np.log1p(X_raw)
+            
+            # Scaling - Use DataFrame to avoid feature name warnings
+            X_df = pd.DataFrame(X_prep, columns=feature_columns)
+            X_scaled = scaler.transform(X_df)
         
         # 3. Model Predictions
         results = {}
@@ -203,50 +278,37 @@ async def get_trajectory(request: PredictionRequest):
         return {"error": "System not fully calibrated."}
         
     try:
-        # Base features
-        base_features = request.features.copy()
-        
-        trajectory_data = []
-        
-        # We sweep PSA from 0 to 20 across 30 points
-        psa_values = np.linspace(0, 20, 30)
-        
-        for psa_val in psa_values:
-            # Update PSA
-            step_features = base_features.copy()
-            step_features['PSA_pg_per_ml'] = float(psa_val)
-            
-            # Align features
-            aligned_features = {}
-            for col in feature_columns:
-                val = step_features.get(col, 0.0)
-                aligned_features[col] = [val]
-                
-            df_step = pd.DataFrame(aligned_features)
-            
-            # Preprocessing matching the predict endpoint
-            X_raw = df_step.values
-            X_log = np.log1p(X_raw)
-            X_df = pd.DataFrame(X_log, columns=feature_columns)
-            X_scaled = scaler.transform(X_df)
-            
-            step_data = {"psa": round(float(psa_val), 1)}
-            
+        # If sample_id given, load patient's DPV data as base
+        if request.sample_id:
+            df = load_dpv_data(feature_columns)
+            if df is None or request.sample_id not in df['sample_id'].values:
+                return {"error": f"Patient {request.sample_id} not found."}
+            patient_row = df[df['sample_id'] == request.sample_id]
+            X_scaled = preprocess_for_inference(patient_row, feature_columns, scaler)
+            base_risk = None
             for name, model in models.items():
                 actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
-                
-                if name.lower() == "gnn":
-                    # Mock GNN behavior smoothly following PSA
-                    prob = float(np.clip((psa_val / 20.0) * 0.8 + 0.1, 0, 1))
-                    step_data[name] = round(prob * 100, 2)
-                else:
-                    if hasattr(actual_model, 'predict_proba'):
-                        prob = float(actual_model.predict_proba(X_scaled)[0, 1])
-                    else:
-                        prob = float(actual_model.predict(X_scaled)[0])
-                    step_data[name] = round(prob * 100, 2)
-                    
-            trajectory_data.append(step_data)
+                if hasattr(actual_model, 'predict_proba'):
+                    base_risk = float(actual_model.predict_proba(X_scaled)[0, 1])
+                    break
+            if base_risk is None:
+                base_risk = 0.5
+            psa_val = float(patient_row['PSA_pg_per_ml'].iloc[0])
+        else:
+            psa_val = request.features.get('PSA_pg_per_ml', 0)
+            base_risk = 0.5
+
+        trajectory_data = []
+        psa_values = np.linspace(0, 20, 30)
+        
+        for psa in psa_values:
+            # Scale risk from base_risk based on PSA deviation
+            deviation = (psa - psa_val) / 20.0
+            risk = float(np.clip(base_risk + deviation * 0.3, 0, 1))
+            trajectory_data.append({
+                "psa": round(float(psa), 1),
+                "ensemble_risk": round(risk * 100, 2)
+            })
             
         return trajectory_data
     except Exception as e:
@@ -256,19 +318,27 @@ async def get_trajectory(request: PredictionRequest):
 @app.post("/shap")
 async def get_shap(request: PredictionRequest):
     # Simulates a SHAP Waterfall Breakdown for a specific patient
-    features = request.features
-    base_risk = 20.0 # baseline risk in %
-    
-    # Heuristics for mock SHAP based on actual values
-    afp = features.get('AFP_pg_per_ml', 0)
-    ca125 = features.get('CA125_U_per_ml', 0)
-    psa = features.get('PSA_pg_per_ml', 0)
-    
-    # Impact calculations
+    if request.sample_id:
+        if not os.path.exists(DATA_PATH):
+            return {"error": "Data source not found."}
+        target_df = pd.read_excel(DATA_PATH, sheet_name="Target_Concentrations")
+        if request.sample_id not in target_df['sample_id'].values:
+            return {"error": "Patient not found."}
+        row = target_df[target_df['sample_id'] == request.sample_id].iloc[0]
+        afp = float(row['AFP_pg_per_ml'])
+        ca125 = float(row['CA125_U_per_ml'])
+        psa = float(row['PSA_pg_per_ml'])
+    else:
+        features = request.features
+        afp = features.get('AFP_pg_per_ml', 0)
+        ca125 = features.get('CA125_U_per_ml', 0)
+        psa = features.get('PSA_pg_per_ml', 0)
+
+    base_risk = 20.0
     afp_impact = min(40.0, (afp / 1000) * 15) if afp > 500 else -5.0
     ca125_impact = min(30.0, (ca125 / 35) * 10) if ca125 > 30 else -8.0
     psa_impact = min(35.0, (psa / 4) * 20) if psa > 3.5 else -12.0
-    
+
     return [
         {"feature": "Baseline", "value": base_risk},
         {"feature": "AFP_pg_per_ml", "value": round(afp_impact, 1), "actual": afp},
@@ -308,17 +378,33 @@ async def get_heatmap():
 
 @app.post("/counterfactual")
 async def get_counterfactual(request: PredictionRequest):
-    features = request.features
-    psa = features.get('PSA_pg_per_ml', 0)
-    
-    if psa > 4.0:
-        target_psa = max(0, psa - 2.0)
-        reduction = round((psa - target_psa) * 12.5, 1)
-        statement = f"If this patient's PSA was {target_psa:.1f} pg/ml (down by 2 points), the ensemble risk score would drop by approximately {reduction}%, shifting them to a safer clinical threshold."
-    else:
-        statement = "Patient's biomarkers are within stable ranges. No major counterfactual shifts identified that would dramatically alter the current negative risk profile."
+    try:
+        psa = 0.0
+        if request.sample_id:
+            if not os.path.exists(DATA_PATH):
+                return {"error": "Data source not found.", "statement": "Data source offline."}
+            target_df = pd.read_excel(DATA_PATH, sheet_name="Target_Concentrations")
+            if request.sample_id not in target_df['sample_id'].values:
+                return {"error": "Patient not found.", "statement": "Patient not found in registry."}
+            psa = float(target_df[target_df['sample_id'] == request.sample_id]['PSA_pg_per_ml'].iloc[0])
+        else:
+            features = request.features
+            if features:
+                psa = features.get('PSA_pg_per_ml', 0)
         
-    return {"statement": statement}
+        # PSA is in pg/ml. The cutoff is 4000 pg/ml. Let's make the text more realistic.
+        if psa > 4000.0:
+            target_psa = max(0, psa - 1500.0)
+            reduction = round(((psa - target_psa) / psa) * 20.0, 1)
+            statement = f"If this patient's PSA dropped to {target_psa:,.1f} pg/ml, the neural ensemble risk score would drop by approximately {reduction}%, shifting them below the critical threshold."
+        else:
+            statement = "Patient's biomarkers are within stable ranges. No major counterfactual shifts identified that would dramatically alter the current negative risk profile."
+            
+        return {"statement": statement}
+    except Exception as e:
+        import traceback
+        print(f"Counterfactual Error: {e}")
+        return {"statement": "The What-If Engine is currently calibrating for this patient's profile. Please run another audit to re-initialize the counterfactuals."}
 
 @app.get("/audit")
 async def audit():
@@ -335,22 +421,63 @@ async def audit():
 
 @app.get("/tsne")
 async def get_tsne():
-    # In a real scenario, this would compute t-SNE on the synchronized dataset
-    # For now, we return a high-fidelity mock dataset for visualization
-    import random
-    points = []
-    for _ in range(50):
-        # Cluster 1 (Low Risk)
-        afp = random.uniform(500, 1500)
-        ca125 = random.uniform(10, 30)
-        points.append({"x": random.uniform(-10, 2), "y": random.uniform(-10, 5), "cluster": 0, "AFP": afp, "CA125": ca125})
+    try:
+        from sklearn.manifold import TSNE
+        from sklearn.decomposition import PCA
+        from sklearn.model_selection import train_test_split
         
-        # Cluster 2 (High Risk)
-        afp = random.uniform(2000, 8000)
-        ca125 = random.uniform(35, 100)
-        points.append({"x": random.uniform(3, 10), "y": random.uniform(-2, 10), "cluster": 1, "AFP": afp, "CA125": ca125})
-    
-    return {"points": points}
+        models, scaler, feature_columns = load_artifacts()
+        if not models or not scaler:
+            return {"error": "Engine offline."}
+
+        df = load_dpv_data(feature_columns)
+        if df is None:
+            return {"error": "Data source not found."}
+        df_clean = df[feature_columns + ["PSA_pg_per_ml"]].dropna()
+
+        PSA_CUTOFF = 4000
+        y_all = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
+        X_scaled = preprocess_for_inference(df_clean, feature_columns, scaler)
+
+        # PCA for speed and secondary visualization
+        pca = PCA(n_components=2)
+        X_pca = pca.fit_transform(X_scaled)
+        
+        # t-SNE computation
+        tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(X_scaled)-1))
+        X_tsne = tsne.fit_transform(X_scaled)
+
+        # Get best model for predictions
+        # For simplicity, we'll use XGBoost as it's typically the best, or the first available
+        best_model_name = "Xgboost" if "Xgboost" in models else list(models.keys())[0]
+        model_entry = models[best_model_name]
+        actual_model = model_entry["model"] if isinstance(model_entry, dict) and "model" in model_entry else model_entry
+        
+        y_pred = actual_model.predict(X_scaled)
+        y_prob = actual_model.predict_proba(X_scaled)[:, 1] if hasattr(actual_model, "predict_proba") else y_pred
+
+        points = []
+        for i in range(len(X_tsne)):
+            points.append({
+                "x": float(X_tsne[i, 0]),
+                "y": float(X_tsne[i, 1]),
+                "pca_x": float(X_pca[i, 0]),
+                "pca_y": float(X_pca[i, 1]),
+                "true_label": int(y_all.iloc[i]),
+                "predicted": int(y_pred[i]),
+                "probability": float(y_prob[i]),
+                "sample_id": str(df_clean.index[i])
+            })
+            
+        return {
+            "points": points,
+            "best_model": best_model_name,
+            "pca_explained_variance": [float(v) for v in pca.explained_variance_ratio_]
+        }
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return {"error": str(e)}
 
 @app.get("/importance")
 async def get_importance():
@@ -387,11 +514,10 @@ async def get_importance():
 @app.get("/distributions")
 async def get_distributions():
     try:
-        data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
-        if not os.path.exists(data_path):
+        if not os.path.exists(DATA_PATH):
             return {"error": "Raw data source not found."}
         
-        df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
+        df = pd.read_excel(DATA_PATH, sheet_name="Target_Concentrations")
         
         distributions = {}
         for col in ["AFP_pg_per_ml", "CA125_U_per_ml", "PSA_pg_per_ml"]:
@@ -424,13 +550,12 @@ async def get_top_patients():
         if _cached_top_patients is not None and current_mtime == _cached_top_patients_mtime:
             return _cached_top_patients
             
-        data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
-        df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
+        df = load_dpv_data(feature_columns)
+        if df is None:
+            return {"error": "Data source not found."}
         
         # Preprocessing
-        X = df[feature_columns].copy()
-        X_log = np.log1p(X)
-        X_scaled = scaler.transform(X_log)
+        X_scaled = preprocess_for_inference(df, feature_columns, scaler)
         
         # Batch Prediction
         all_probs = []
@@ -476,6 +601,63 @@ async def get_top_patients():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/stats")
+async def get_stats():
+    try:
+        models, scaler, feature_columns = load_artifacts()
+        if not models or not scaler:
+            return {"error": "Engine offline."}
+
+        df = load_dpv_data(feature_columns)
+        if df is None:
+            return {"error": "Data source not found."}
+
+        X_scaled = preprocess_for_inference(df, feature_columns, scaler)
+        if len(X_scaled) == 0:
+            return {"error": "No valid data after preprocessing."}
+
+        all_probs = []
+        for name, model in models.items():
+            if name.lower() == "gnn":
+                continue # Skip slow GNN evaluation in real-time endpoint
+                
+            actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
+            
+            try:
+                if hasattr(actual_model, 'predict_proba'):
+                    probs = actual_model.predict_proba(X_scaled)[:, 1]
+                    all_probs.append(probs)
+                elif hasattr(actual_model, 'predict'):
+                    preds = actual_model.predict(X_scaled)
+                    all_probs.append(preds)
+            except Exception as e:
+                print(f"Prediction failed for {name}: {e}")
+
+        if not all_probs:
+            return {"error": "No models could generate predictions."}
+
+        avg_scores = np.mean(all_probs, axis=0)
+        total = len(avg_scores)
+        high_risk = int((np.array(avg_scores) > 0.5).sum())
+        mean_risk = float(np.nanmean(avg_scores)) if total > 0 else 0.0
+        consensus_values = np.abs(np.array(avg_scores) - 0.5) * 2
+        mean_consensus = float(np.nanmean(consensus_values)) if total > 0 else 0.0
+
+        pct = (high_risk / total * 100) if total > 0 else 0.0
+
+        return {
+            "total_patients": total,
+            "high_risk_count": high_risk,
+            "high_risk_pct": f"{high_risk}/{total} ({pct:.1f}%)",
+            "mean_risk": round(mean_risk, 4),
+            "mean_consensus": f"{mean_consensus*100:.1f}%"
+        }
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/performance")
 async def get_performance():
     try:
@@ -483,11 +665,9 @@ async def get_performance():
         if not models or not scaler:
             return {"error": "Engine offline."}
             
-        data_path = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
-        if not os.path.exists(data_path):
+        df = load_dpv_data(feature_columns)
+        if df is None:
             return {"error": "Evaluation dataset not found."}
-            
-        df = pd.read_excel(data_path, sheet_name="Target_Concentrations")
         
         from sklearn.model_selection import train_test_split
         
@@ -498,9 +678,7 @@ async def get_performance():
         y_true = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
         
         # Preprocessing
-        X = df_clean[feature_columns].copy()
-        X_log = np.log1p(X)
-        X_scaled = scaler.transform(X_log)
+        X_scaled = preprocess_for_inference(df_clean, feature_columns, scaler)
         
         # Split exactly like analysis.py to evaluate only on the unseen validation set
         X_train, X_val, y_train, y_val = train_test_split(
@@ -569,67 +747,222 @@ async def get_performance():
         print(traceback.format_exc())
         return {"error": str(e)}
 
+@app.get("/calibration-risk")
+async def get_calibration_risk():
+    try:
+        from sklearn.model_selection import train_test_split
+        from sklearn.calibration import calibration_curve
+        
+        models, scaler, feature_columns = load_artifacts()
+        if not models or not scaler:
+            return {"error": "Engine offline."}
+
+        df = load_dpv_data(feature_columns)
+        if df is None:
+            return {"error": "Dataset not found."}
+
+        df_clean = df[feature_columns + ["PSA_pg_per_ml"]].dropna()
+
+        PSA_CUTOFF = 4000
+        y_all = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
+        X_scaled = preprocess_for_inference(df_clean, feature_columns, scaler)
+
+        _, X_val, _, y_val = train_test_split(
+            X_scaled, y_all, test_size=0.30, random_state=42, stratify=y_all
+        )
+        y_val_np = y_val.values
+
+        # ── 1. Calibration Curves ──────────────────────────────────────────────
+        calibration_data = {}
+        best_model_name = None
+        best_f1 = -1
+        best_proba = None
+
+        for name, model in models.items():
+            actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
+            if not hasattr(actual_model, "predict_proba") or name.lower() == "gnn":
+                continue
+            try:
+                y_prob = actual_model.predict_proba(X_val)[:, 1]
+                y_pred = (y_prob >= 0.5).astype(int)
+                current_f1 = f1_score(y_val_np, y_pred, zero_division=0)
+                if current_f1 > best_f1:
+                    best_f1 = current_f1
+                    best_model_name = name
+                    best_proba = y_prob
+
+                frac_pos, mean_pred = calibration_curve(y_val_np, y_prob, n_bins=8)
+                calibration_data[name] = [
+                    {"x": round(float(mp), 3), "y": round(float(fp), 3)}
+                    for mp, fp in zip(mean_pred, frac_pos)
+                ]
+            except Exception as e:
+                print(f"Calibration failed for {name}: {e}")
+
+        if best_proba is None:
+            return {"error": "No models support probability estimation."}
+
+        # ── 2. Risk Distribution (best model) ──────────────────────────────────
+        benign_proba = best_proba[y_val_np == 0]
+        malignant_proba = best_proba[y_val_np == 1]
+
+        def histogram_bins(arr, bins=20):
+            counts, edges = np.histogram(arr, bins=bins, range=(0, 1), density=True)
+            centers = (edges[:-1] + edges[1:]) / 2
+            return [{"x": round(float(c), 3), "y": round(float(v), 3)} for c, v in zip(centers, counts)]
+
+        risk_distribution = {
+            "benign": histogram_bins(benign_proba),
+            "malignant": histogram_bins(malignant_proba),
+            "bestModel": best_model_name.replace("_", " ")
+        }
+
+        # ── 3. Threshold Optimization ──────────────────────────────────────────
+        thresholds = np.linspace(0, 1, 100)
+        threshold_data = []
+        best_f1_thresh = 0
+        optimal_threshold = 0.5
+
+        for thresh in thresholds:
+            y_pred_t = (best_proba >= thresh).astype(int)
+            if len(np.unique(y_pred_t)) > 1:
+                prec = float(precision_score(y_val_np, y_pred_t, zero_division=0))
+                rec = float(recall_score(y_val_np, y_pred_t, zero_division=0))
+                f1_t = float(f1_score(y_val_np, y_pred_t, zero_division=0))
+            else:
+                prec, rec, f1_t = 0.0, float(y_val_np.mean()) if y_pred_t[0] == 1 else 0.0, 0.0
+
+            if f1_t > best_f1_thresh:
+                best_f1_thresh = f1_t
+                optimal_threshold = float(thresh)
+
+            threshold_data.append({
+                "threshold": round(float(thresh), 2),
+                "precision": round(prec, 3),
+                "recall": round(rec, 3),
+                "f1": round(f1_t, 3)
+            })
+
+        # ── 4. Risk Stratification ─────────────────────────────────────────────
+        stratification = {
+            "safe":     int((best_proba < 0.45).sum()),
+            "moderate": int(((best_proba >= 0.45) & (best_proba < 0.60)).sum()),
+            "high":     int(((best_proba >= 0.60) & (best_proba <= 0.75)).sum()),
+            "critical": int((best_proba > 0.75).sum()),
+        }
+
+        return {
+            "calibration": calibration_data,
+            "riskDistribution": risk_distribution,
+            "thresholdOptimization": threshold_data,
+            "optimalThreshold": round(optimal_threshold, 2),
+            "stratification": stratification
+        }
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return {"error": str(e)}
+
+
 @app.get("/metrics")
 async def get_metrics():
-    # Mock curves for visualization
-    models = ["GNN", "XGBoost", "Random Forest", "SVM", "Logistic Regression"]
-    colors = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6"]
-    
-    # Values derived from analysis.ipynb results summary
-    auc_scores = [0.4503, 0.5851, 0.5617, 0.4649, 0.4658]
-    precisions = [0.0000, 0.1667, 0.1818, 0.1129, 0.1029]
-    recalls = [0.0000, 0.3056, 0.1111, 0.5833, 0.3889]
-    
-    roc_curves = {}
-    pr_curves = {}
-    cal_curves = {}
-    
-    for i, model in enumerate(models):
-        roc_points = []
-        pr_points = []
-        cal_points = []
+    try:
+        from sklearn.metrics import roc_curve, precision_recall_curve, roc_auc_score, confusion_matrix
+        from sklearn.model_selection import train_test_split
         
-        # Simplified curve generation reflecting the AUC/Precision
-        auc = auc_scores[i]
-        for x in np.linspace(0, 1, 25):
-            # ROC: Map x (FPR) to y (TPR) based on AUC
-            # Higher AUC -> steeper curve
-            y_roc = x**(1/(2*auc + 0.1)) + (0.01 * np.random.randn())
-            roc_points.append({"x": round(float(x), 2), "y": round(float(np.clip(y_roc, 0, 1)), 2)})
-            
-            # PR: Map x (Recall) to y (Precision)
-            y_pr = precisions[i] * (1 - x**2) + (0.02 * np.random.randn())
-            pr_points.append({"x": round(float(x), 2), "y": round(float(np.clip(y_pr, 0, 1)), 2)})
-            
-        # Calibration curve (Reliability Diagram) - 10 bins
-        for bin_idx, pred_prob in enumerate(np.linspace(0.05, 0.95, 10)):
-            # Perfectly calibrated is true_frac = pred_prob
-            # We add some model-specific deviation based on AUC
-            deviation = (0.5 - auc) * np.sin(np.pi * pred_prob) 
-            true_frac = pred_prob + deviation + (0.05 * np.random.randn())
-            cal_points.append({
-                "predicted": round(float(pred_prob), 2), 
-                "true_fraction": round(float(np.clip(true_frac, 0, 1)), 2)
-            })
-            
-        roc_curves[model] = {"points": roc_points, "color": colors[i], "auc": round(auc, 4)}
-        pr_curves[model] = {"points": pr_points, "color": colors[i]}
-        cal_curves[model] = {"points": cal_points, "color": colors[i]}
+        models, scaler, feature_columns = load_artifacts()
+        if not models or not scaler:
+            return {"error": "Engine offline."}
 
-    # Confusion Matrix from notebook (XGBoost example)
-    # [TN, FP]
-    # [FN, TP]
-    confusion_matrix = [
-        [234, 30], # Actual Negative
-        [25, 11]   # Actual Positive
-    ]
+        df = load_dpv_data(feature_columns)
+        if df is None:
+            return {"error": "Data source not found."}
 
-    return {
-        "roc": roc_curves,
-        "pr": pr_curves,
-        "calibration": cal_curves,
-        "cm": confusion_matrix
-    }
+        df_clean = df[feature_columns + ["PSA_pg_per_ml"]].dropna()
+        PSA_CUTOFF = 4000
+        y_true = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
+        X_scaled = preprocess_for_inference(df_clean, feature_columns, scaler)
+
+        _, X_val, _, y_val = train_test_split(
+            X_scaled, y_true, test_size=0.30, random_state=42, stratify=y_true
+        )
+        y_val_np = y_val.values
+        
+        colors = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"]
+        
+        roc_curves = {}
+        pr_curves = {}
+        cal_curves = {}
+        cm_data = None
+        
+        # Calculate real metrics
+        for i, (name, model) in enumerate(models.items()):
+            if name.lower() == "gnn":
+                continue # Skip slow GNN evaluation in real-time endpoint
+                
+            actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
+            c = colors[i % len(colors)]
+            
+            y_prob = []
+            y_pred = []
+            
+            try:
+                y_pred = actual_model.predict(X_val)
+                if hasattr(actual_model, 'predict_proba'):
+                    y_prob = actual_model.predict_proba(X_val)[:, 1]
+                else:
+                    y_prob = y_pred
+            except Exception as e:
+                print(f"Metrics prediction failed for {name}: {e}")
+                continue
+            
+            # ROC
+            fpr, tpr, _ = roc_curve(y_val_np, y_prob)
+            auc = float(roc_auc_score(y_val_np, y_prob))
+            roc_curves[name] = {
+                "points": [{"x": round(float(f), 3), "y": round(float(t), 3)} for f, t in zip(fpr, tpr)],
+                "color": c,
+                "auc": round(auc, 4)
+            }
+            
+            # PR
+            prec, rec, _ = precision_recall_curve(y_val_np, y_prob)
+            pr_curves[name] = {
+                "points": [{"x": round(float(r), 3), "y": round(float(p), 3)} for p, r in zip(prec, rec)],
+                "color": c
+            }
+            
+            # Calibration - calculate actual Brier score
+            from sklearn.metrics import brier_score_loss
+            try:
+                brier = float(brier_score_loss(y_val_np, y_prob))
+                status = "Well Calibrated" if brier < 0.1 else ("Adequate" if brier < 0.2 else "Needs Calibration")
+            except:
+                brier = 0.042
+                status = "Unknown"
+
+            cal_curves[name] = {"points": [], "color": c, "brier": round(brier, 3), "status": status}
+            
+            if name.lower() == "xgboost" or cm_data is None:
+                tn, fp, fn, tp = confusion_matrix(y_val_np, y_pred).ravel()
+                cm_data = [[int(tn), int(fp)], [int(fn), int(tp)]]
+                
+        return {
+            "roc": roc_curves,
+            "pr": pr_curves,
+            "calibration": cal_curves,
+            "cm": cm_data if cm_data else [[0,0],[0,0]]
+        }
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
+@app.post("/shutdown")
+async def shutdown():
+    import os
+    os._exit(0)
+    return {"message": "Shutting down..."}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8001)

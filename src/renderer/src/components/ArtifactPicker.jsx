@@ -104,7 +104,7 @@ const ArtifactPicker = ({ onSync, files = [], setFiles, syncing, setSyncing, onP
     <div className="bg-[#0d1117] border border-gray-800 rounded-lg p-4 flex flex-col h-auto overflow-hidden">
       <div className="mb-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
-          <h2 className="text-[9px] font-black uppercase italic text-white tracking-[0.2em]">
+          <h2 className="text-[9px] font-black text-white tracking-[0.2em]">
             Calibration
           </h2>
           <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse" />
@@ -115,7 +115,7 @@ const ArtifactPicker = ({ onSync, files = [], setFiles, syncing, setSyncing, onP
             onClick={handleSync}
             disabled={syncing || !hasUnsynced}
             className={cn(
-              'px-3 py-1.5 rounded text-[8px] font-black uppercase tracking-[0.2em] transition-all flex items-center gap-2',
+              'px-3 py-1.5 rounded text-[8px] font-black tracking-[0.2em] transition-all flex items-center gap-2',
               syncing || !hasUnsynced
                 ? 'bg-gray-800 text-gray-600 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.2)]'
@@ -134,7 +134,7 @@ const ArtifactPicker = ({ onSync, files = [], setFiles, syncing, setSyncing, onP
           {files.length > 0 && (
             <button
               onClick={handlePurge}
-              className="text-[9px] font-bold text-red-500/50 hover:text-red-500 uppercase transition-colors"
+              className="text-[9px] font-bold text-red-500/50 hover:text-red-500 transition-colors"
             >
               Purge All
             </button>
@@ -148,14 +148,14 @@ const ArtifactPicker = ({ onSync, files = [], setFiles, syncing, setSyncing, onP
           onDragLeave={onDragLeave}
           onDrop={onDrop}
           className={cn(
-            'relative border border-dashed rounded p-10 min-h-[100px] transition-all duration-200 flex flex-col items-center justify-center gap-2 shrink-0',
+            'relative border border-dashed rounded p-4 min-h-[60px] transition-all duration-200 flex flex-col items-center justify-center gap-1 shrink-0',
             isDragging
               ? 'border-blue-500 bg-blue-500/5'
               : 'border-gray-800 bg-black/40 hover:border-gray-700'
           )}
         >
-          <Upload size={14} className="text-blue-500/50" />
-          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] pointer-events-none">
+          <Upload size={12} className="text-blue-500/50" />
+          <p className="text-[9px] font-bold text-gray-500 tracking-[0.2em] pointer-events-none">
             Drop Models
           </p>
           <input
@@ -209,8 +209,8 @@ const ArtifactPicker = ({ onSync, files = [], setFiles, syncing, setSyncing, onP
               ))}
             </div>
           ) : (
-            <div className="h-full flex items-center justify-center border border-gray-800/10 border-dashed rounded py-8">
-              <p className="text-[7px] text-gray-800 font-bold uppercase tracking-widest opacity-20 italic">
+            <div className="h-full flex items-center justify-center border border-gray-800/10 border-dashed rounded py-4">
+              <p className="text-[7px] text-gray-800 font-bold tracking-widest opacity-20">
                 No Models Calibrated
               </p>
             </div>

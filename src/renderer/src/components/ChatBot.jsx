@@ -78,7 +78,7 @@ const ChatBot = ({ appState }) => {
         <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-black/40 rounded-t-lg">
           <div className="flex items-center gap-2">
             <Bot size={18} className="text-blue-500" />
-            <h3 className="text-sm font-black uppercase tracking-widest text-white">Forensic Co-Pilot</h3>
+            <h3 className="text-sm font-black tracking-widest text-white">Forensic Co-Pilot</h3>
           </div>
           <button 
             onClick={() => setIsOpen(false)}
@@ -100,15 +100,15 @@ const ChatBot = ({ appState }) => {
               </div>
               <div className={cn(
                 "px-3 py-2 rounded-lg text-[11px] leading-relaxed max-w-[85%]",
-                msg.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-gray-800/50 text-gray-300 border border-gray-800 rounded-tl-none whitespace-pre-wrap"
+                msg.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-[#0d1117] text-gray-300 border border-gray-800 rounded-tl-none"
               )}>
                 <ReactMarkdown
                   components={{
-                    p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
+                    p: ({node, ...props}) => <p className="mb-1.5 last:mb-0" {...props} />,
                     strong: ({node, ...props}) => <strong className={cn("font-bold", msg.role === 'user' ? "text-white" : "text-blue-400")} {...props} />,
                     em: ({node, ...props}) => <em className={cn("italic", msg.role === 'user' ? "text-blue-100" : "text-gray-400")} {...props} />,
-                    ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2 space-y-1 marker:text-gray-600" {...props} />,
-                    ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-2 space-y-1 marker:text-gray-600" {...props} />,
+                    ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5 marker:text-gray-600" {...props} />,
+                    ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5 marker:text-gray-600" {...props} />,
                     li: ({node, ...props}) => <li {...props} />,
                     code: ({node, inline, ...props}) => inline 
                       ? <code className="bg-black/50 px-1 py-0.5 rounded font-mono text-[10px]" {...props} />

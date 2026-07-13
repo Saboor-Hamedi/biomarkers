@@ -1,0 +1,2 @@
+Model,Accuracy,Precision,Recall,F1-Score,ROC-AUC
+GNN,0.88,0.0,0.0,0.0,0.44454966329966333

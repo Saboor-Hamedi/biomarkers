@@ -7,13 +7,24 @@ import {
   LayoutDashboard,
   BrainCircuit,
   Database,
-  BarChart,
   Settings,
-  Target,
-  Zap,
-  ShieldCheck,
-  Search
+  TrendingUp,
+  BarChart2,
+  Map,
+  Grid,
+  GitBranch,
+  LineChart,
+  Crosshair,
+  Sliders,
+  AlertTriangle,
+  LayoutGrid,
+  Network,
+  ListTree,
+  Users
 } from 'lucide-react'
+
+import SidebarHeader from './SidebarHeader'
+import SidebarFooter from './SidebarFooter'
 
 const SidebarItem = memo(({ icon: Icon, label, active, collapsed, onClick }) => (
   <button
@@ -31,7 +42,7 @@ const SidebarItem = memo(({ icon: Icon, label, active, collapsed, onClick }) => 
     )}
     <Icon size={16} className={cn("shrink-0", active ? "text-blue-500" : "group-hover:text-blue-400")} />
     {!collapsed && (
-      <span className="ml-4 text-[9px] font-black uppercase tracking-[0.2em] truncate">{label}</span>
+      <span className="ml-4 text-[12px] font-['Inter',_sans-serif] font-medium tracking-wide truncate">{label}</span>
     )}
   </button>
 ))
@@ -58,45 +69,32 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
   ]
 
   const analyticItems = [
-    { id: 'trajectory', label: 'Risk Trajectories', icon: Activity },
-    { id: 'shap', label: 'SHAP Breakdown', icon: BarChart },
-    { id: 'boundaries', label: 'Decision Map', icon: Search },
-    { id: 'heatmap', label: 'Model Heatmap', icon: Target },
-    { id: 'counterfactual', label: 'What-If Engine', icon: ShieldCheck },
-    { id: 'roc', label: 'ROC Analysis', icon: Target },
-    { id: 'pr', label: 'PR Dynamics', icon: Zap },
-    { id: 'calibration', label: 'Model Calibration', icon: Target },
-    { id: 'cm', label: 'Confusion Matrix', icon: ShieldCheck },
-    { id: 'tsne', label: 'Latent Space', icon: Search },
-    { id: 'importance', label: 'Biomarker Influence', icon: BarChart },
-    { id: 'distribution', label: 'Cohort Comparison', icon: Activity },
+    { id: 'trajectory', label: 'Risk Trajectories', icon: TrendingUp },
+    { id: 'shap', label: 'Biometric Radar', icon: BarChart2 },
+    { id: 'boundaries', label: 'Decision Map', icon: Map },
+    { id: 'heatmap', label: 'Model Heatmap', icon: Grid },
+    { id: 'counterfactual', label: 'What-If Engine', icon: GitBranch },
+    { id: 'roc', label: 'ROC Analysis', icon: LineChart },
+    { id: 'pr', label: 'PR Dynamics', icon: Crosshair },
+    { id: 'calibration', label: 'Model Calibration', icon: Sliders },
+    { id: 'calibration-risk', label: 'Calibration Risk', icon: AlertTriangle },
+    { id: 'cm', label: 'Confusion Matrix', icon: LayoutGrid },
+    { id: 'tsne', label: 'Latent Space', icon: Network },
+    { id: 'importance', label: 'Biomarker Influence', icon: ListTree },
+    { id: 'distribution', label: 'Cohort Comparison', icon: Users },
   ]
 
   return (
     <div 
       className={cn(
         "h-screen bg-[#0d1117] border-r border-gray-800 flex flex-col transition-all duration-300",
-        collapsed ? "w-16" : "w-64"
+        collapsed ? "w-16" : "w-56"
       )}
     >
-      <div className={cn("flex items-center border-b border-gray-800 h-16 shrink-0", collapsed ? "justify-center p-0" : "justify-between p-6")}>
-        {!collapsed && (
-          <div className="flex items-center gap-3">
-            <Activity className="text-blue-600" size={20} />
-            <span className="font-black text-white tracking-[0.1em] text-sm italic">CANCER BIOMARKER</span>
-          </div>
-        )}
-        <button 
-          onClick={toggleCollapsed}
-          className="p-1.5 hover:bg-gray-800 rounded border border-gray-800 transition-colors text-gray-500"
-        >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
-      </div>
+      <SidebarHeader collapsed={collapsed} toggleCollapsed={toggleCollapsed} />
 
-      <div className="flex-1 py-4 overflow-y-auto overflow-x-hidden space-y-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="flex-1 pt-0 pb-4 overflow-y-auto overflow-x-hidden space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div>
-          {!collapsed && <p className="px-6 mb-2 text-[7px] font-black text-gray-600 uppercase tracking-[0.3em]">Main Hub</p>}
           {mainItems.map((item) => (
             <SidebarItem
               key={item.id}
@@ -109,7 +107,6 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
         </div>
 
         <div>
-          {!collapsed && <p className="px-6 mb-2 text-[7px] font-black text-gray-600 uppercase tracking-[0.3em]">Deep Discovery</p>}
           {analyticItems.map((item) => (
             <SidebarItem
               key={item.id}
@@ -122,15 +119,7 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
         </div>
       </div>
 
-      <div className={cn("border-t border-gray-800 shrink-0", collapsed ? "p-2" : "p-4")}>
-        <SidebarItem
-          icon={Settings}
-          label="Settings"
-          collapsed={collapsed}
-          onClick={onOpenSettings}
-          active={false}
-        />
-      </div>
+      <SidebarFooter collapsed={collapsed} onOpenSettings={onOpenSettings} />
     </div>
   )
 })

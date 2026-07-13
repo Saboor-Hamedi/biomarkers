@@ -1,17 +1,18 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import pickle
 import os
+import pickle
 import sys
-import matplotlib.pyplot as plt
 
-# 🧬 RESEARCH BRIDGE: Ensure GNN definitions are available for unpickling
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+#  RESEARCH BRIDGE: Ensure GNN definitions are available for unpickling
 try:
     import torch
     import torch.nn.functional as F
     from torch_geometric.nn import GCNConv, global_mean_pool
-    
+
     class GNNModel(torch.nn.Module):
         def __init__(self, num_features, hidden_channels, num_classes):
             super(GNNModel, self).__init__()
@@ -41,10 +42,10 @@ st.set_page_config(
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
-    .stMetric { 
-        background-color: #ffffff !important; 
-        border: 1px solid #dee2e6; 
-        padding: 20px; 
+    .stMetric {
+        background-color: #ffffff !important;
+        border: 1px solid #dee2e6;
+        padding: 20px;
         border-radius: 10px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
@@ -52,11 +53,11 @@ st.markdown("""
     [data-testid="stMetricValue"] { color: #1a1c24 !important; }
     [data-testid="stMetricLabel"] { color: #495057 !important; }
     [data-testid="stMetricDelta"] { font-weight: bold; }
-    
+
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { 
-        background-color: #1a1c24; 
-        border-radius: 5px 5px 0 0; 
+    .stTabs [data-baseweb="tab"] {
+        background-color: #1a1c24;
+        border-radius: 5px 5px 0 0;
         padding: 10px 20px;
         color: #808495;
     }
@@ -80,7 +81,7 @@ def load_models():
                     if "edge_index" in obj: extra_meta[m] = {"edge_index": obj["edge_index"]}
                 else:
                     models[m] = obj
-    
+
     with open(os.path.join(model_dir, "scaler.pkl"), 'rb') as f:
         scaler = pickle.load(f)
     with open(os.path.join(model_dir, "feature_columns.pkl"), 'rb') as f:
@@ -128,54 +129,54 @@ def get_prediction(model_obj, name, X_scaled):
 if st.sidebar.button("RUN BATCH FORENSIC AUDIT", type="secondary"):
     st.divider()
     st.header("DETAILED CLINICAL PERFORMANCE & FORENSIC AUDIT")
-    
+
     # 1. Load Data
     data_path = "../../analysis/data/Raw_data_dpv.xlsx"
     if not os.path.exists(data_path):
         data_path = "../data/Raw_data_dpv.xlsx" # Fallback
-        
+
     if os.path.exists(data_path):
         df_batch = pd.read_excel(data_path)
         # Auto-label
         psa_col = next((c for c in df_batch.columns if 'psa' in c.lower() and 'ratio' not in c.lower()), None)
         if psa_col:
             df_batch['target'] = (pd.to_numeric(df_batch[psa_col], errors='coerce') > 4000).astype(int)
-        
+
         # 2. Batch Inference
         X_batch = df_batch[feature_columns]
         X_prep = scaler.transform(np.log1p(X_batch.clip(lower=0)))
-        
+
         # Use primary model for batch (e.g. XGBoost)
         m_key = "xgboost" if "xgboost" in models else list(models.keys())[0]
         m_batch = models[m_key]
-        
+
         # Progress
         risks = []
         for i in range(len(X_prep)):
             risks.append(get_prediction(m_batch, m_key, X_prep[i:i+1]))
-        
+
         df_batch['risk_index'] = risks
         df_batch['prediction'] = [1 if r >= 0.5 else 0 for r in risks]
-        
+
         # ── 1. EXECUTIVE SUMMARY ──────────────────────────────────────
         total = len(df_batch)
         pos = df_batch['prediction'].sum()
         neg = total - pos
         det_rate = pos / total
-        
+
         st.subheader("1. EXECUTIVE BATCH TRIAGE SUMMARY")
         st.write(f"ALERT: The AI ensemble has audited {total} profiles. The overall detection rate is {det_rate:.1%}.")
-        
+
         c1, c2, c3 = st.columns(3)
         c1.metric("POSITIVE", f"{pos}", "Malignant")
         c2.metric("NEGATIVE", f"{neg}", "Benign")
         c3.metric("DETECTION RATE", f"{det_rate:.1%}")
-        
+
         z1, z2, z3 = st.columns(3)
         z1.metric("CRITICAL RADIUS", len(df_batch[df_batch['risk_index'] > 0.75]), "Risk > 75%")
         z2.metric("URGENT ZONE", len(df_batch[(df_batch['risk_index'] >= 0.45) & (df_batch['risk_index'] <= 0.75)]), "Risk 45-75%")
         z3.metric("STABLE COHORT", len(df_batch[df_batch['risk_index'] < 0.45]), "Risk < 45%")
-        
+
         # ── 3. DATA-DRIVEN JUSTIFICATION ─────────────────────────────
         st.subheader("2. DATA-DRIVEN CLINICAL JUSTIFICATION")
         metrics = []
@@ -184,24 +185,24 @@ if st.sidebar.button("RUN BATCH FORENSIC AUDIT", type="secondary"):
             neg_mean = df_batch[df_batch['prediction'] == 0][feat].mean()
             div = abs(pos_mean - neg_mean) / (neg_mean if neg_mean != 0 else 1)
             metrics.append({"Biomarker": feat, "Positive Mean": f"{pos_mean:.2f}", "Negative Mean": f"{neg_mean:.2f}", "Divergence": f"{div:.1%}"})
-        
+
         st.table(pd.DataFrame(metrics))
-        
+
         # ── 4. CLINICAL REGISTRY ──────────────────────────────────────
         st.subheader("3. HIGH-RISK CLINICAL REGISTRY (TOP 50)")
         df_top = df_batch.sort_values('risk_index', ascending=False).head(50)
-        
+
         # Cleanup for display
         display_cols = []
         if 'sample_id' in df_batch.columns: display_cols.append('sample_id')
         display_cols.extend(['risk_index'])
         if psa_col: display_cols.append(psa_col)
         display_cols.extend(feature_columns)
-        
+
         df_display = df_top[display_cols].copy()
         df_display['Action'] = ["URGENT REVIEW" if r > 0.45 else "ROUTINE" for r in df_display['risk_index']]
         st.dataframe(df_display.style.background_gradient(subset=['risk_index'], cmap='Reds'))
-        
+
         st.caption(f"Forensic Mode: ACTIVE | Source: {os.path.basename(data_path)} | Scope: {total} Records")
     else:
         st.error("Research dataset (Raw_data_dpv.xlsx) not found. Please ensure it is in analysis/data/")
@@ -210,20 +211,20 @@ if run_btn:
     # Inference
     in_df = pd.DataFrame([[afp, ca125]], columns=feature_columns)
     in_prep = scaler.transform(np.log1p(in_df.clip(lower=0)))
-    
+
     model_map = {"Random Forest": "random_forest", "XGBoost": "xgboost", "Logistic Regression": "logistic_regression", "SVM": "svm", "GNN": "gnn"}
     m_key = model_map[model_choice]
     m = models[m_key]
-    
+
     p = get_prediction(m, m_key, in_prep)
-    
+
     # ── METRIC TILES ──────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Risk Score", f"{p:.1%}")
     c2.metric("Prediction", "MALIGNANT" if p >= threshold else "BENIGN")
     c3.metric("Ensemble Consensus", "HIGH" if (p > 0.8 or p < 0.2) else "MODERATE")
     c4.metric("Model Architecture", model_choice)
-    
+
     # ── COMMITTEE PEER REVIEW ─────────────────────────────────────────
     st.header("AI Committee Consensus")
     cons_cols = st.columns(len(models))

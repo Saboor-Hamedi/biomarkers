@@ -34,7 +34,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
           <div className="flex items-center gap-2">
             <SettingsIcon size={18} className="text-gray-400" />
-            <h2 className="text-sm font-black uppercase tracking-widest text-white">System Settings</h2>
+            <h2 className="text-sm font-black tracking-widest text-white">System Settings</h2>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
             <X size={18} />
@@ -46,16 +46,16 @@ const SettingsModal = ({ isOpen, onClose }) => {
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Key size={16} className="text-blue-500" />
-              <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider">DeepSeek API Configuration</h3>
+              <h3 className="text-xs font-bold text-gray-300 tracking-wider">DeepSeek API Configuration</h3>
             </div>
             
-            <p className="text-[10px] text-gray-500 leading-relaxed uppercase font-bold">
+            <p className="text-[10px] text-gray-500 leading-relaxed font-bold">
               Securely bind your DeepSeek AI access token. This key is encrypted and strictly stored locally on your machine. It is required to power the Forensic Co-Pilot.
             </p>
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                <label className="block text-[10px] font-bold text-gray-400 tracking-wider mb-2">
                   Access Token
                 </label>
                 <input
@@ -70,7 +70,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
               <button 
                 type="submit"
                 className={cn(
-                  "w-full flex items-center justify-center gap-2 py-2.5 rounded text-xs font-black uppercase tracking-widest transition-all duration-300",
+                  "w-full flex items-center justify-center gap-2 py-2.5 rounded text-xs font-black tracking-widest transition-all duration-300",
                   saved ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/50" : "bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]"
                 )}
               >
