@@ -291,7 +291,7 @@ function App() {
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <CommitteeReview artifacts={artifacts} prediction={prediction} metrics={metrics} />
+                  <CommitteeReview artifacts={artifacts} prediction={prediction} metrics={metrics} performanceData={performanceData} />
                   <div className="bg-[#0d1117] border border-gray-800 rounded p-8 h-[450px] overflow-y-auto custom-scrollbar pr-2">
                     <h3 className="text-[10px] font-bold tracking-[0.2em] text-blue-500 mb-8 flex items-center gap-2">
                       <Activity size={14} className="text-blue-500" />
@@ -365,11 +365,11 @@ function App() {
                             {model.name}
                             {model.highlight && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2 font-black">Best</span>}
                           </td>
-                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.acc}</td>
-                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.prec}</td>
-                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.rec}</td>
-                          <td className="p-4 text-[10px] font-mono font-bold text-blue-400">{model.f1}</td>
-                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.roc}</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.acc}%</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.prec}%</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.rec}%</td>
+                          <td className="p-4 text-[10px] font-mono font-bold text-blue-400">{model.f1}%</td>
+                          <td className="p-4 text-[10px] font-mono text-gray-400">{model.roc}%</td>
                         </tr>
                       )) : (
                         <tr>

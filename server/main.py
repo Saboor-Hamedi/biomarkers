@@ -1,5 +1,6 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
@@ -10,26 +11,15 @@ import random
 import sys
 from fastapi.middleware.cors import CORSMiddleware
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
-import sys
-# Define GNNModel class for unpickling if needed
+
+FIGURES_DIR = os.path.join(os.path.dirname(__file__), "analysis", "figure")
+
+# Ensure cnn_model module is importable for pickle deserialization
 try:
     import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
     from torch_geometric.nn import GCNConv, global_mean_pool
-    class GNNModel(torch.nn.Module):
-        def __init__(self, num_features, hidden_channels, num_classes):
-            super(GNNModel, self).__init__()
-            self.conv1 = GCNConv(num_features, hidden_channels)
-            self.conv2 = GCNConv(hidden_channels, hidden_channels)
-            self.lin = torch.nn.Linear(hidden_channels, num_classes)
-
-        def forward(self, x, edge_index, batch):
-            x = self.conv1(x, edge_index)
-            x = x.relu()
-            x = self.conv2(x, edge_index)
-            x = x.relu()
-            x = global_mean_pool(x, batch)
-            x = self.lin(x)
-            return x
 except ImportError:
     pass
 
@@ -44,48 +34,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATA_PATH = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_data_dpv.xlsx")
+DATA_PATH = os.path.join(os.path.dirname(__file__), "analysis", "data", "Raw_DPV_Dataset_for_Cancer_biomarker.csv")
 ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "analysis", "models")
 
-# Ensure gnn_model module is importable for pickle deserialization
+# Ensure cnn_model module is importable for pickle deserialization
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "analysis", "src"))
 
 _cached_dpv_df = None
 
 def load_dpv_data(feature_columns):
-    """Load Target_Concentrations and merge with DPV voltammetry data from Sample_* sheets."""
+    """Load patient data from CSV (biomarkers + DPV voltammetry columns)."""
     global _cached_dpv_df
     if _cached_dpv_df is not None:
         return _cached_dpv_df
 
     if not os.path.exists(DATA_PATH):
         return None
-    target = pd.read_excel(DATA_PATH, sheet_name="Target_Concentrations")
-    # Only merge DPV columns if features are DPV (V0, V1, ...)
-    dpv_cols = [c for c in feature_columns if c.startswith('V') and c[1:].isdigit()]
-    if dpv_cols:
-        all_sheets = pd.read_excel(DATA_PATH, sheet_name=None)
-        sample_sheets = {k: v for k, v in all_sheets.items() if k.startswith('Sample_')}
-        records = []
-        for sid in sorted(sample_sheets.keys()):
-            sdf = sample_sheets[sid]
-            currents = sdf['current_uA'].values
-            record = {'sample_id': sid}
-            for i, val in enumerate(currents):
-                if f'V{i}' in feature_columns:
-                    record[f'V{i}'] = val
-            records.append(record)
-        dpv_df = pd.DataFrame(records)
-        merged = target.merge(dpv_df, on='sample_id', how='left')
-    else:
-        merged = target
-        
-    _cached_dpv_df = merged
-    return merged
+    df = pd.read_csv(DATA_PATH)
+    _cached_dpv_df = df
+    return df
 
 
 def is_dpv_features(feature_columns):
-    return any(c.startswith('V') and c[1:].isdigit() for c in feature_columns)
+    return any(c.startswith('curr_') for c in feature_columns)
 
 
 def preprocess_for_inference(df, feature_columns, scaler):
@@ -149,7 +120,16 @@ def load_artifacts():
             print(f"Skipping empty model file: {mf}")
             continue
             
-        name = os.path.basename(mf).replace("_model.pkl", "").replace("_", " ").capitalize()
+        raw_name = os.path.basename(mf).replace("_model.pkl", "")
+        display_map = {
+            "logistic_regression": "Logistic Regression",
+            "random_forest": "Random Forest",
+            "svm": "SVM",
+            "xgboost": "XGBoost",
+            "1d-cnn": "1D-CNN",
+            "bilstm": "BiLSTM",
+        }
+        name = display_map.get(raw_name, raw_name.replace("_", " ").title())
         try:
             with open(mf, "rb") as f:
                 models[name] = pickle.load(f)
@@ -210,39 +190,17 @@ async def predict(request: PredictionRequest):
         
         for name, model in models.items():
             try:
-                # Check if model is wrapped in a dict (common in GNN saves)
+                # Check if model is wrapped in a dict
                 actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
                 
-                if name.lower() == "gnn":
-                    # GNN prediction logic
-                    try:
-                        import torch
-                        from torch_geometric.data import Data
-                        actual_model.eval()
-                        
-                        # Use same logic as notebook
-                        x_tensor = torch.FloatTensor(X_scaled).expand(len(feature_columns), -1)
-                        # Minimal graph for single sample inference
-                        edge_index = model["edge_index"] if isinstance(model, dict) and "edge_index" in model else torch.LongTensor([[0, 1], [1, 0]]).t().contiguous()
-                        
-                        with torch.no_grad():
-                            batch = torch.zeros(x_tensor.size(0), dtype=torch.long)
-                            out = actual_model(x_tensor, edge_index, batch)
-                            prob = torch.softmax(out, dim=1)[0, 1].item()
-                        
-                        results[name] = prob
-                        probabilities.append(prob)
-                    except Exception as e:
-                        print(f"GNN Prediction failed: {e}")
+                if hasattr(actual_model, 'predict_proba'):
+                    prob = actual_model.predict_proba(X_scaled)[0, 1]
+                    results[name] = prob
+                    probabilities.append(prob)
                 else:
-                    if hasattr(actual_model, 'predict_proba'):
-                        prob = actual_model.predict_proba(X_scaled)[0, 1]
-                        results[name] = prob
-                        probabilities.append(prob)
-                    else:
-                        pred = actual_model.predict(X_scaled)[0]
-                        results[name] = float(pred)
-                        probabilities.append(float(pred))
+                    pred = actual_model.predict(X_scaled)[0]
+                    results[name] = float(pred)
+                    probabilities.append(float(pred))
             except Exception as e:
                 print(f"Model {name} failed: {e}")
 
@@ -262,7 +220,7 @@ async def predict(request: PredictionRequest):
             "risk_score": round(float(avg_score), 4),
             "prediction": risk_level,
             "consensus": f"{round(float(consensus), 1)}%",
-            "models": {k: f"{round(v*100, 1)}%" for k, v in results.items()},
+            "models": {k: f"{round(float(v)*100, 1)}%" for k, v in results.items()},
             "tsne_coord": {"x": tsne_x, "y": tsne_y}
         }
         
@@ -321,7 +279,7 @@ async def get_shap(request: PredictionRequest):
     if request.sample_id:
         if not os.path.exists(DATA_PATH):
             return {"error": "Data source not found."}
-        target_df = pd.read_excel(DATA_PATH, sheet_name="Target_Concentrations")
+        target_df = pd.read_csv(DATA_PATH)
         if request.sample_id not in target_df['sample_id'].values:
             return {"error": "Patient not found."}
         row = target_df[target_df['sample_id'] == request.sample_id].iloc[0]
@@ -361,19 +319,69 @@ async def get_boundaries():
 
 @app.get("/heatmap")
 async def get_heatmap():
-    # Simulates a Model Consensus Heatmap across the 1000-patient cohort
-    models = ["XGBoost", "SVM", "Random Forest", "GNN", "Logistic Regression"]
+    # Model performance heatmap: rows = metrics, columns = models (same data as /performance)
+    summary_path = os.path.join(ARTIFACTS_DIR, "performance_summary.json")
+    if os.path.exists(summary_path):
+        with open(summary_path, "r") as f:
+            import json
+            summary = json.load(f)
+        models_map = summary.get("models", {})
+        if not models_map:
+            return []
+        data = []
+        metric_rows = [
+            ("Accuracy", "accuracy"),
+            ("Precision", "precision"),
+            ("Recall", "recall"),
+            ("F1-Score", "f1_score"),
+            ("ROC-AUC", "roc_auc"),
+            ("PR-AUC", "pr_auc"),
+        ]
+        for label, key in metric_rows:
+            for name, m in models_map.items():
+                data.append({"x": name, "y": label, "value": round(float(m[key]) * 100, 2)})
+        return data
+
+    # Fallback: compute live from loaded models if no persisted summary exists
+    models, scaler, feature_columns = load_artifacts()
+    if not models or not scaler:
+        return []
+
+    df = load_dpv_data(feature_columns)
+    if df is None:
+        return []
+
+    df_clean = df[feature_columns + ["PSA_pg_per_ml"]].dropna()
+    PSA_CUTOFF = 4000
+    y_true = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
+    X_scaled = preprocess_for_inference(df_clean, feature_columns, scaler)
+
+    metric_rows = [
+        ("Accuracy", "accuracy"),
+        ("Precision", "precision"),
+        ("Recall", "recall"),
+        ("F1-Score", "f1_score"),
+        ("ROC-AUC", "roc_auc"),
+        ("PR-AUC", "pr_auc"),
+    ]
     data = []
-    for m1 in models:
-        for m2 in models:
-            if m1 == m2:
-                corr = 100.0
-            else:
-                # Mock correlations
-                base = 80.0 if ("Tree" in m1 or "Boost" in m1 or "Forest" in m1) and ("Tree" in m2 or "Boost" in m2 or "Forest" in m2) else 65.0
-                base += random.uniform(-5, 10)
-                corr = min(98.0, base)
-            data.append({"x": m1, "y": m2, "value": round(corr, 1)})
+    for name, model in models.items():
+        try:
+            actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
+            y_pred = actual_model.predict(X_scaled)
+            y_prob = actual_model.predict_proba(X_scaled)[:, 1] if hasattr(actual_model, "predict_proba") else y_pred
+            vals = {
+                "accuracy": accuracy_score(y_true, y_pred),
+                "precision": precision_score(y_true, y_pred, zero_division=0),
+                "recall": recall_score(y_true, y_pred, zero_division=0),
+                "f1_score": f1_score(y_true, y_pred, zero_division=0),
+                "roc_auc": roc_auc_score(y_true, y_prob),
+                "pr_auc": 0.0,
+            }
+            for label, key in metric_rows:
+                data.append({"x": name, "y": label, "value": round(vals[key] * 100, 1)})
+        except Exception as e:
+            print(f"Heatmap failed for {name}: {e}")
     return data
 
 @app.post("/counterfactual")
@@ -383,7 +391,7 @@ async def get_counterfactual(request: PredictionRequest):
         if request.sample_id:
             if not os.path.exists(DATA_PATH):
                 return {"error": "Data source not found.", "statement": "Data source offline."}
-            target_df = pd.read_excel(DATA_PATH, sheet_name="Target_Concentrations")
+            target_df = pd.read_csv(DATA_PATH)
             if request.sample_id not in target_df['sample_id'].values:
                 return {"error": "Patient not found.", "statement": "Patient not found in registry."}
             psa = float(target_df[target_df['sample_id'] == request.sample_id]['PSA_pg_per_ml'].iloc[0])
@@ -418,6 +426,23 @@ async def audit():
         "artifacts": files,
         "count": len(files)
     }
+
+@app.get("/figures")
+async def list_figures():
+    """List the generated publication figures (PNG files)."""
+    if not os.path.exists(FIGURES_DIR):
+        return []
+    figures = [f for f in os.listdir(FIGURES_DIR) if f.endswith('.png')]
+    return sorted(figures)
+
+@app.get("/figures/{figure_name}")
+async def get_figure(figure_name: str):
+    """Serve a generated figure PNG."""
+    safe = os.path.basename(figure_name)
+    path = os.path.join(FIGURES_DIR, safe)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Figure not found")
+    return FileResponse(path, media_type="image/png")
 
 @app.get("/tsne")
 async def get_tsne():
@@ -517,7 +542,7 @@ async def get_distributions():
         if not os.path.exists(DATA_PATH):
             return {"error": "Raw data source not found."}
         
-        df = pd.read_excel(DATA_PATH, sheet_name="Target_Concentrations")
+        df = pd.read_csv(DATA_PATH)
         
         distributions = {}
         for col in ["AFP_pg_per_ml", "CA125_U_per_ml", "PSA_pg_per_ml"]:
@@ -618,9 +643,6 @@ async def get_stats():
 
         all_probs = []
         for name, model in models.items():
-            if name.lower() == "gnn":
-                continue # Skip slow GNN evaluation in real-time endpoint
-                
             actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
             
             try:
@@ -661,6 +683,32 @@ async def get_stats():
 @app.get("/performance")
 async def get_performance():
     try:
+        # Read the persisted OOF metrics (same numbers as the terminal pipeline output)
+        summary_path = os.path.join(ARTIFACTS_DIR, "performance_summary.json")
+        if os.path.exists(summary_path):
+            with open(summary_path, "r") as f:
+                import json
+                summary = json.load(f)
+
+            results = []
+            for name, m in summary.get("models", {}).items():
+                results.append({
+                    "name": name,
+                    "acc": f"{m['accuracy'] * 100:.2f}",
+                    "prec": f"{m['precision'] * 100:.2f}",
+                    "rec": f"{m['recall'] * 100:.2f}",
+                    "f1": f"{m['f1_score'] * 100:.2f}",
+                    "roc": f"{m['roc_auc'] * 100:.2f}",
+                    "highlight": False,
+                })
+
+            if results:
+                best_idx = max(range(len(results)), key=lambda i: float(results[i]['f1']))
+                results[best_idx]['highlight'] = True
+            results.sort(key=lambda x: float(x['f1']), reverse=True)
+            return results
+
+        # Fallback: live evaluation if no persisted summary exists yet
         models, scaler, feature_columns = load_artifacts()
         if not models or not scaler:
             return {"error": "Engine offline."}
@@ -673,14 +721,10 @@ async def get_performance():
         
         df_clean = df[feature_columns + ["PSA_pg_per_ml"]].dropna()
         
-        # Clinical Cutoff
         PSA_CUTOFF = 4000
         y_true = (df_clean["PSA_pg_per_ml"] > PSA_CUTOFF).astype(int)
-        
-        # Preprocessing
         X_scaled = preprocess_for_inference(df_clean, feature_columns, scaler)
         
-        # Split exactly like analysis.py to evaluate only on the unseen validation set
         X_train, X_val, y_train, y_val = train_test_split(
             X_scaled, y_true, test_size=0.30, random_state=42, stratify=y_true
         )
@@ -689,31 +733,8 @@ async def get_performance():
         for name, model in models.items():
             try:
                 actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
-                
-                y_pred = []
-                y_prob = []
-                
-                if name.lower() == "gnn":
-                    import torch
-                    from torch_geometric.data import Data
-                    actual_model.eval()
-                    x_tensor = torch.FloatTensor(X_val).expand(len(feature_columns), -1)
-                    edge_index = model["edge_index"] if isinstance(model, dict) and "edge_index" in model else torch.LongTensor([[0, 1], [1, 0]]).t().contiguous()
-                    
-                    with torch.no_grad():
-                        for i in range(len(X_val)):
-                            x_single = torch.FloatTensor(X_val[i]).unsqueeze(0).expand(len(feature_columns), -1)
-                            batch = torch.zeros(x_single.size(0), dtype=torch.long)
-                            out = actual_model(x_single, edge_index, batch)
-                            probs = torch.softmax(out, dim=1)
-                            y_pred.append(probs.argmax(dim=1).item())
-                            y_prob.append(probs[0, 1].item())
-                else:
-                    y_pred = actual_model.predict(X_val)
-                    if hasattr(actual_model, 'predict_proba'):
-                        y_prob = actual_model.predict_proba(X_val)[:, 1]
-                    else:
-                        y_prob = y_pred
+                y_pred = actual_model.predict(X_val)
+                y_prob = actual_model.predict_proba(X_val)[:, 1] if hasattr(actual_model, 'predict_proba') else y_pred
 
                 acc = accuracy_score(y_val, y_pred)
                 prec = precision_score(y_val, y_pred, zero_division=0)
@@ -722,25 +743,21 @@ async def get_performance():
                 roc = roc_auc_score(y_val, y_prob)
 
                 results.append({
-                    "name": name.replace('_', ' '),
-                    "acc": f"{acc:.4f}",
-                    "prec": f"{prec:.4f}",
-                    "rec": f"{rec:.4f}",
-                    "f1": f"{f1:.4f}",
-                    "roc": f"{roc:.4f}",
+                    "name": name,
+                    "acc": f"{acc * 100:.2f}",
+                    "prec": f"{prec * 100:.2f}",
+                    "rec": f"{rec * 100:.2f}",
+                    "f1": f"{f1 * 100:.2f}",
+                    "roc": f"{roc * 100:.2f}",
                     "highlight": False
                 })
             except Exception as e:
                 print(f"Evaluation failed for {name}: {e}")
                 
-        # Highlight best model by F1
         if results:
             best_idx = max(range(len(results)), key=lambda i: float(results[i]['f1']))
             results[best_idx]['highlight'] = True
-            
-        # Sort results descending by F1 score so the best is at the top
         results.sort(key=lambda x: float(x['f1']), reverse=True)
-            
         return results
     except Exception as e:
         import traceback
@@ -780,7 +797,7 @@ async def get_calibration_risk():
 
         for name, model in models.items():
             actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
-            if not hasattr(actual_model, "predict_proba") or name.lower() == "gnn":
+            if not hasattr(actual_model, "predict_proba"):
                 continue
             try:
                 y_prob = actual_model.predict_proba(X_val)[:, 1]
@@ -897,9 +914,6 @@ async def get_metrics():
         
         # Calculate real metrics
         for i, (name, model) in enumerate(models.items()):
-            if name.lower() == "gnn":
-                continue # Skip slow GNN evaluation in real-time endpoint
-                
             actual_model = model["model"] if isinstance(model, dict) and "model" in model else model
             c = colors[i % len(colors)]
             

@@ -6,6 +6,26 @@ import { spawn } from 'child_process'
 import fs from 'fs'
 
 let pyProcess = null
+let serverReady = false
+
+async function waitForServer(timeoutMs = 60000) {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const res = await fetch('http://127.0.0.1:8001/audit')
+      if (res.ok) {
+        serverReady = true
+        console.log('Biomarker server is ready.')
+        return true
+      }
+    } catch (err) {
+      // Not ready yet — keep polling
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+  console.error('Biomarker server did not become ready in time.')
+  return false
+}
 
 async function startPythonServer() {
   try {
@@ -21,6 +41,9 @@ async function startPythonServer() {
   pyProcess = spawn('python', [script])
   pyProcess.stdout.on('data', (data) => console.log(`Python: ${data}`))
   pyProcess.stderr.on('data', (data) => console.error(`Python Error: ${data}`))
+
+  // Wait until the server actually responds so the UI never sees "failed to fetch"
+  await waitForServer()
 }
 
 function createWindow() {
@@ -44,6 +67,23 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  // Enable DevTools toggle with Ctrl+Shift+I (menu is removed, so bind manually)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (
+      input.type === 'keyDown' &&
+      input.control &&
+      input.shift &&
+      input.key.toLowerCase() === 'i'
+    ) {
+      event.preventDefault()
+      if (mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools()
+      } else {
+        mainWindow.webContents.openDevTools({ mode: 'detach' })
+      }
+    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -109,8 +149,7 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  startPythonServer()
-  createWindow()
+  startPythonServer().then(() => createWindow())
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

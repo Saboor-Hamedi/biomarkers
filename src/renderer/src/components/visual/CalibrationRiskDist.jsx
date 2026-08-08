@@ -1,10 +1,30 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import AnalyticView from './AnalyticView'
 import { ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, BarChart, Bar } from 'recharts'
-import { Target, BarChart as BarChartIcon } from 'lucide-react'
+import { Target, BarChart as BarChartIcon, Image as ImageIcon } from 'lucide-react'
 
 
 const CalibrationRiskDist = ({ activeTab, calibrationRiskData }) => {
+  const [figures, setFigures] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    if (activeTab === 'calibration-risk') {
+      fetch('http://127.0.0.1:8001/figures')
+        .then((r) => r.json())
+        .then((list) => {
+          if (!cancelled) setFigures(Array.isArray(list) ? list : [])
+        })
+        .catch(() => {})
+    }
+    return () => { cancelled = true }
+  }, [activeTab])
+
+  // Publication figures shown at the top of the tab
+  const gallery = figures.length
+    ? figures.filter((f) => /\.png$/i.test(f))
+    : []
+
   return (
 <div className={activeTab === 'calibration-risk' ? 'block' : 'hidden'}>
       {(() => {
@@ -37,6 +57,34 @@ const CalibrationRiskDist = ({ activeTab, calibrationRiskData }) => {
         icon={Target}
         explanation="Four-panel forensic breakdown: model calibration reliability, best-model risk distribution, precision/recall/F1 threshold sweep, and cohort risk stratification counts."
       >
+        {/* Publication Figure Gallery */}
+        {gallery.length > 0 && (
+          <div className="space-y-4 mb-8">
+            <p className="text-[9px] font-black tracking-[0.2em] text-blue-500 flex items-center gap-2">
+              <ImageIcon size={12} className="text-blue-500" />
+              Publication Figures
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {gallery.map((f) => (
+                <figure
+                  key={f}
+                  className="bg-[#0a0e14] border border-gray-800 rounded-lg overflow-hidden shadow-[0_0_25px_rgba(37,99,235,0.08)]"
+                >
+                  <img
+                    src={`http://127.0.0.1:8001/figures/${f}`}
+                    alt={f.replace(/\.png$/i, '')}
+                    className="w-full h-auto object-contain bg-white"
+                    loading="lazy"
+                  />
+                  <figcaption className="p-3 text-[9px] font-bold text-gray-400 tracking-widest border-t border-gray-800">
+                    {f.replace(/_/g, ' ').replace(/\.png$/i, '')}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           {/* Panel 1: Model Calibration Curves */}
           <div className="space-y-3">

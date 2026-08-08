@@ -4,8 +4,23 @@ out
 .DS_Store
 .eslintcache
 *.log*
-# server\analysis\src\__pycache__
-# server/analysis/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Local notes / working documents
+result.md
+report.md
+
+# Trained model artifacts
+*.pkl
+
+# Large generated datasets
+server/analysis/data/*.csv
+
+# Generated result tables
+server/analysis/results/*.csv
 
 # Large binaries
 assets/models/

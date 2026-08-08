@@ -7,27 +7,11 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-#  RESEARCH BRIDGE: Ensure GNN definitions are available for unpickling
+# RESEARCH BRIDGE: Ensure cnn_model definitions are available for unpickling
+sys.path.insert(0, os.path.dirname(__file__))
 try:
     import torch
     import torch.nn.functional as F
-    from torch_geometric.nn import GCNConv, global_mean_pool
-
-    class GNNModel(torch.nn.Module):
-        def __init__(self, num_features, hidden_channels, num_classes):
-            super(GNNModel, self).__init__()
-            self.conv1 = GCNConv(num_features, hidden_channels)
-            self.conv2 = GCNConv(hidden_channels, hidden_channels)
-            self.lin = torch.nn.Linear(hidden_channels, num_classes)
-
-        def forward(self, x, edge_index, batch):
-            x = self.conv1(x, edge_index)
-            x = x.relu()
-            x = self.conv2(x, edge_index)
-            x = x.relu()
-            x = global_mean_pool(x, batch)
-            x = self.lin(x)
-            return x
 except ImportError:
     pass
 
@@ -71,14 +55,13 @@ def load_models():
     model_dir = "../models/"
     models = {}
     extra_meta = {}
-    for m in ["logistic_regression", "random_forest", "svm", "xgboost", "gnn"]:
+    for m in ["logistic_regression", "random_forest", "svm", "xgboost", "1d_cnn", "bilstm"]:
         path = os.path.join(model_dir, f"{m}_model.pkl")
         if os.path.exists(path):
             with open(path, 'rb') as f:
                 obj = pickle.load(f)
                 if isinstance(obj, dict) and "model" in obj:
                     models[m] = obj["model"]
-                    if "edge_index" in obj: extra_meta[m] = {"edge_index": obj["edge_index"]}
                 else:
                     models[m] = obj
 
@@ -94,7 +77,7 @@ with st.sidebar:
     afp = st.number_input("AFP (pg/mL)", value=500.0)
     ca125 = st.number_input("CA125 (U/mL)", value=35.0)
     st.divider()
-    model_choice = st.selectbox("Champion Model", ["XGBoost", "Random Forest", "GNN", "SVM", "Logistic Regression"])
+    model_choice = st.selectbox("Champion Model", ["XGBoost", "Random Forest", "1D-CNN", "BiLSTM", "SVM", "Logistic Regression"])
     threshold = st.slider("Sensitivity", 0.0, 1.0, 0.5)
     run_btn = st.button("RUN FORENSIC ANALYSIS", type="primary")
 
@@ -109,20 +92,9 @@ except Exception as e:
     st.stop()
 
 def get_prediction(model_obj, name, X_scaled):
-    """Unified inference for sklearn and GNN."""
+    """Unified inference for sklearn and PyTorch sequence models."""
     if hasattr(model_obj, 'predict_proba'):
         return float(model_obj.predict_proba(X_scaled)[0][1])
-    elif "gnn" in name.lower() and HAS_TORCH:
-        model_obj.eval()
-        with torch.no_grad():
-            # Prep graph data matching notebook logic
-            num_feats = X_scaled.shape[1]
-            x = torch.tensor(X_scaled, dtype=torch.float).expand(num_feats, -1)
-            edge_index = extra_meta.get(name, {}).get("edge_index")
-            if edge_index is None: return 0.5 # Fallback
-            batch = torch.zeros(x.size(0), dtype=torch.long)
-            out = model_obj(x, edge_index, batch)
-            return float(F.softmax(out, dim=1)[:, 1].mean()) # Average across nodes
     return float(model_obj.predict(X_scaled)[0])
 
 # ── FORENSIC AUDIT ENGINE (Batch Mode) ────────────────────────────────
@@ -131,20 +103,23 @@ if st.sidebar.button("RUN BATCH FORENSIC AUDIT", type="secondary"):
     st.header("DETAILED CLINICAL PERFORMANCE & FORENSIC AUDIT")
 
     # 1. Load Data
-    data_path = "../../analysis/data/Raw_data_dpv.xlsx"
+    data_path = "../../analysis/data/Raw_DPV_Dataset_for_Cancer_biomarker.csv"
     if not os.path.exists(data_path):
-        data_path = "../data/Raw_data_dpv.xlsx" # Fallback
+        data_path = "../data/Raw_DPV_Dataset_for_Cancer_biomarker.csv"
 
     if os.path.exists(data_path):
-        df_batch = pd.read_excel(data_path)
+        df_batch = pd.read_csv(data_path)
         # Auto-label
         psa_col = next((c for c in df_batch.columns if 'psa' in c.lower() and 'ratio' not in c.lower()), None)
         if psa_col:
             df_batch['target'] = (pd.to_numeric(df_batch[psa_col], errors='coerce') > 4000).astype(int)
 
         # 2. Batch Inference
-        X_batch = df_batch[feature_columns]
-        X_prep = scaler.transform(np.log1p(X_batch.clip(lower=0)))
+        X_batch = df_batch[feature_columns].copy()
+        for col in X_batch.columns:
+            if col in ("AFP_pg_per_ml", "CA125_U_per_ml"):
+                X_batch[col] = np.log1p(X_batch[col].clip(lower=0))
+        X_prep = scaler.transform(X_batch)
 
         # Use primary model for batch (e.g. XGBoost)
         m_key = "xgboost" if "xgboost" in models else list(models.keys())[0]
@@ -205,14 +180,19 @@ if st.sidebar.button("RUN BATCH FORENSIC AUDIT", type="secondary"):
 
         st.caption(f"Forensic Mode: ACTIVE | Source: {os.path.basename(data_path)} | Scope: {total} Records")
     else:
-        st.error("Research dataset (Raw_data_dpv.xlsx) not found. Please ensure it is in analysis/data/")
+        st.error("Research dataset (Raw_DPV_Dataset_for_Cancer_biomarker.csv) not found. Please ensure it is in analysis/data/")
 
 if run_btn:
-    # Inference
-    in_df = pd.DataFrame([[afp, ca125]], columns=feature_columns)
-    in_prep = scaler.transform(np.log1p(in_df.clip(lower=0)))
+    # Inference (fill DPV columns with 0 for manual biomarker entry)
+    in_df = pd.DataFrame(0.0, index=[0], columns=feature_columns)
+    in_df["AFP_pg_per_ml"] = afp
+    in_df["CA125_U_per_ml"] = ca125
+    for col in feature_columns:
+        if col in ("AFP_pg_per_ml", "CA125_U_per_ml"):
+            in_df[col] = np.log1p(in_df[col].clip(lower=0))
+    in_prep = scaler.transform(in_df)
 
-    model_map = {"Random Forest": "random_forest", "XGBoost": "xgboost", "Logistic Regression": "logistic_regression", "SVM": "svm", "GNN": "gnn"}
+    model_map = {"Random Forest": "random_forest", "XGBoost": "xgboost", "Logistic Regression": "logistic_regression", "SVM": "svm", "1D-CNN": "1d_cnn", "BiLSTM": "bilstm"}
     m_key = model_map[model_choice]
     m = models[m_key]
 
@@ -239,12 +219,21 @@ if run_btn:
     st.header("Sensitivity Simulation")
     s1, s2 = st.columns(2)
     # Sensitivity 1
-    prep_s1 = scaler.transform(np.log1p(pd.DataFrame([[afp*0.8, ca125]], columns=feature_columns).clip(lower=0)))
+    s1_df = pd.DataFrame(0.0, index=[0], columns=feature_columns)
+    s1_df["AFP_pg_per_ml"] = afp * 0.8
+    s1_df["CA125_U_per_ml"] = ca125
+    for col in ("AFP_pg_per_ml", "CA125_U_per_ml"):
+        s1_df[col] = np.log1p(s1_df[col].clip(lower=0))
+    prep_s1 = scaler.transform(s1_df)
     p1 = get_prediction(m, m_key, prep_s1)
     s1.metric("20% AFP Improvement", f"{p1:.1%}", f"{p1-p:.1%}", delta_color="inverse")
     # Sensitivity 2
-    prep_s2 = scaler.transform(np.log1p(pd.DataFrame([[afp, ca125*0.8]], columns=feature_columns).clip(lower=0)))
-    p2 = get_prediction(m, m_key, prep_s2)
+    s2_df = pd.DataFrame(0.0, index=[0], columns=feature_columns)
+    s2_df["AFP_pg_per_ml"] = afp
+    s2_df["CA125_U_per_ml"] = ca125 * 0.8
+    for col in ("AFP_pg_per_ml", "CA125_U_per_ml"):
+        s2_df[col] = np.log1p(s2_df[col].clip(lower=0))
+    prep_s2 = scaler.transform(s2_df)
     s2.metric("20% CA125 Improvement", f"{p2:.1%}", f"{p2-p:.1%}", delta_color="inverse")
 
 # ── RESEARCH GALLERY ──────────────────────────────────────────────────
@@ -276,7 +265,4 @@ with t3:
     st.pyplot(fig)
 
 with t4:
-    res_path = "../results/model_comparison_with_gnn.csv"
-    if os.path.exists(res_path):
-        st.dataframe(pd.read_csv(res_path).style.background_gradient(cmap='Reds'), use_container_width=True)
-    else: st.info("Run analysis.ipynb to generate rankings.")
+    st.info("Model comparison results are printed to console during training.")
