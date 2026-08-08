@@ -25,8 +25,10 @@ const CalibrationRiskDist = ({ activeTab, calibrationRiskData }) => {
     ? figures.filter((f) => /\.png$/i.test(f))
     : []
 
+  if (activeTab !== 'calibration-risk') return null
+
   return (
-<div className={activeTab === 'calibration-risk' ? 'block' : 'hidden'}>
+<div className="block">
       {(() => {
         const calData = calibrationRiskData
         const COLORS = {

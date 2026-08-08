@@ -214,38 +214,24 @@ const Visual = ({
     [distributionData]
   )
 
-  return (
-    <>
-      <Counterfactual activeTab={activeTab} counterfactualData={counterfactualData} />
+  // Render only the active analytic tab — avoids hidden-container recharts warnings
+  const activeView = {
+    counterfactual: <Counterfactual activeTab={activeTab} counterfactualData={counterfactualData} />,
+    heatmap: <Heatmap activeTab={activeTab} heatmapData={heatmapData} />,
+    boundaries: <Boundaries activeTab={activeTab} boundariesData={boundariesData} />,
+    shap: <Shap activeTab={activeTab} shapData={shapData} shapTableData={shapTableData} />,
+    trajectory: <Trajectory activeTab={activeTab} trajectoryData={trajectoryData} trajectoryModels={trajectoryModels} trajectoryColors={trajectoryColors} trajectoryTableData={trajectoryTableData} />,
+    roc: <Roc activeTab={activeTab} rocTableData={rocTableData} metrics={metrics} />,
+    pr: <Pr activeTab={activeTab} prTableData={prTableData} metrics={metrics} />,
+    calibration: <Calibration activeTab={activeTab} calibrationTableData={calibrationTableData} metrics={metrics} />,
+    cm: <Cm activeTab={activeTab} metrics={metrics} cmTableData={cmTableData} />,
+    tsne: <Tsne activeTab={activeTab} tsneData={tsneData} tsneSubsets={tsneSubsets} tsneView={tsneView} setTsneView={setTsneView} tsneTableData={tsneTableData} />,
+    importance: <Importance activeTab={activeTab} importancePrimaryModel={importancePrimaryModel} importanceTableData={importanceTableData} importanceChartData={importanceChartData} />,
+    distribution: <Distribution activeTab={activeTab} distributionData={distributionData} distributionTableData={distributionTableData} distEntries={distEntries} inputs={inputs} />,
+    'calibration-risk': <CalibrationRiskDist activeTab={activeTab} calibrationRiskData={calibrationRiskData} />
+  }
 
-      <Heatmap activeTab={activeTab} heatmapData={heatmapData} />
-
-      <Boundaries activeTab={activeTab} boundariesData={boundariesData} />
-
-      <Shap activeTab={activeTab} shapData={shapData} shapTableData={shapTableData} />
-
-      <Trajectory activeTab={activeTab} trajectoryData={trajectoryData} trajectoryModels={trajectoryModels} trajectoryColors={trajectoryColors} trajectoryTableData={trajectoryTableData} />
-
-
-
-      <Roc activeTab={activeTab} rocTableData={rocTableData} metrics={metrics} />
-
-      <Pr activeTab={activeTab} prTableData={prTableData} metrics={metrics} />
-
-      <Calibration activeTab={activeTab} calibrationTableData={calibrationTableData} metrics={metrics} />
-
-      <Cm activeTab={activeTab} metrics={metrics} cmTableData={cmTableData} />
-
-      <Tsne activeTab={activeTab} tsneData={tsneData} tsneSubsets={tsneSubsets} tsneView={tsneView} setTsneView={setTsneView} tsneTableData={tsneTableData} />
-
-      <Importance activeTab={activeTab} importancePrimaryModel={importancePrimaryModel} importanceTableData={importanceTableData} importanceChartData={importanceChartData} />
-
-      <Distribution activeTab={activeTab} distributionData={distributionData} distributionTableData={distributionTableData} distEntries={distEntries} inputs={inputs} />
-      <CalibrationRiskDist activeTab={activeTab} calibrationRiskData={calibrationRiskData} />
-    </>
-  )
-
-
+  return activeView[activeTab] || null
 }
 
 export default memo(Visual)
