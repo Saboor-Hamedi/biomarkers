@@ -1,29 +1,44 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import AnalyticView from './AnalyticView'
 import { ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, BarChart, Bar } from 'recharts'
 import { Target, BarChart as BarChartIcon, Image as ImageIcon } from 'lucide-react'
 
+function FigureCard({ name }) {
+  const [error, setError] = React.useState(false)
+  const src = `http://127.0.0.1:8001/figures/${name}`
+  return (
+    <figure className="bg-[#0a0e14] border border-gray-800 rounded-lg overflow-hidden shadow-[0_0_25px_rgba(37,99,235,0.08)]">
+      {error ? (
+        <div className="w-full h-48 flex items-center justify-center text-gray-600 text-[10px] font-bold bg-white">
+          Figure unavailable
+        </div>
+      ) : (
+        <img
+          src={src}
+          alt={name.replace(/\.png$/i, '')}
+          onError={() => setError(true)}
+          className="w-full h-auto object-contain bg-white"
+          loading="lazy"
+        />
+      )}
+      <figcaption className="p-3 text-[9px] font-bold text-gray-400 tracking-widest border-t border-gray-800">
+        {name.replace(/_/g, ' ').replace(/\.png$/i, '')}
+      </figcaption>
+    </figure>
+  )
+}
 
 const CalibrationRiskDist = ({ activeTab, calibrationRiskData }) => {
-  const [figures, setFigures] = useState([])
-
-  useEffect(() => {
-    let cancelled = false
-    if (activeTab === 'calibration-risk') {
-      fetch('http://127.0.0.1:8001/figures')
-        .then((r) => r.json())
-        .then((list) => {
-          if (!cancelled) setFigures(Array.isArray(list) ? list : [])
-        })
-        .catch(() => {})
-    }
-    return () => { cancelled = true }
-  }, [activeTab])
-
-  // Publication figures shown at the top of the tab
-  const gallery = figures.length
-    ? figures.filter((f) => /\.png$/i.test(f))
-    : []
+  // Publication figures shown at the top of the tab (curated set matching the journal)
+  const gallery = [
+    'Figure1_DPV_Fingerprints.png',
+    'model_performance_summary.png',
+    'correlation_heatmap.png',
+    'violin_plots.png',
+    'parallel_coordinates.png',
+    'Figure3_Feature_Importance_Map.png',
+    'shap_importance.png'
+  ]
 
   if (activeTab !== 'calibration-risk') return null
 
@@ -68,20 +83,7 @@ const CalibrationRiskDist = ({ activeTab, calibrationRiskData }) => {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {gallery.map((f) => (
-                <figure
-                  key={f}
-                  className="bg-[#0a0e14] border border-gray-800 rounded-lg overflow-hidden shadow-[0_0_25px_rgba(37,99,235,0.08)]"
-                >
-                  <img
-                    src={`http://127.0.0.1:8001/figures/${f}`}
-                    alt={f.replace(/\.png$/i, '')}
-                    className="w-full h-auto object-contain bg-white"
-                    loading="lazy"
-                  />
-                  <figcaption className="p-3 text-[9px] font-bold text-gray-400 tracking-widest border-t border-gray-800">
-                    {f.replace(/_/g, ' ').replace(/\.png$/i, '')}
-                  </figcaption>
-                </figure>
+                <FigureCard key={f} name={f} />
               ))}
             </div>
           </div>

@@ -1,10 +1,27 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import AnalyticView from './AnalyticView'
 import { ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Cell, BarChart, Bar, LabelList } from 'recharts'
-import { Activity, BarChart as BarChartIcon } from 'lucide-react'
+import { Activity, BarChart as BarChartIcon, Image as ImageIcon } from 'lucide-react'
 
 
 const Shap = ({ activeTab, shapData, shapTableData }) => {
+  const [figures, setFigures] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    if (activeTab === 'shap') {
+      fetch('http://127.0.0.1:8001/figures')
+        .then((r) => r.json())
+        .then((list) => {
+          if (!cancelled) setFigures(Array.isArray(list) ? list : [])
+        })
+        .catch(() => {})
+    }
+    return () => { cancelled = true }
+  }, [activeTab])
+
+  const hasShapFigure = figures.some((f) => f.toLowerCase().includes('shap'))
+
   return (
 <div className={activeTab === 'shap' ? 'block' : 'hidden'}>
         <AnalyticView
@@ -78,6 +95,26 @@ const Shap = ({ activeTab, shapData, shapTableData }) => {
             </div>
           )}
         </div>
+
+        {/* Global SHAP importance figure */}
+        {hasShapFigure && (
+          <div className="mt-8 space-y-3">
+            <p className="text-[9px] font-black tracking-[0.2em] text-blue-500 flex items-center gap-2">
+              <ImageIcon size={12} className="text-blue-500" />
+              Global SHAP Feature Importance
+            </p>
+            <figure className="bg-[#0a0e14] border border-gray-800 rounded-lg overflow-hidden shadow-[0_0_25px_rgba(37,99,235,0.08)]">
+              <img
+                src={`http://127.0.0.1:8001/figures/shap_importance.png`}
+                alt="Global SHAP Feature Importance"
+                className="w-full h-auto object-contain bg-white"
+              />
+              <figcaption className="p-3 text-[9px] font-bold text-gray-400 tracking-widest border-t border-gray-800">
+                SHAP Feature Importance Map — PSA Redox Window Dominance
+              </figcaption>
+            </figure>
+          </div>
+        )}
       </AnalyticView>
       </div>
   )

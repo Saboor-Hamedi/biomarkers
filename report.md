@@ -1,133 +1,181 @@
-﻿
-Evaluating Machine Learning for Prostate Cancer Risk Classification Study Using DPV Voltammetry
-
+﻿AI-Assisted Decoding of Multiplexed Electrochemical Fingerprints for Simultaneous Quantification of PSA, AFP, and CA125 in Serum
 Abdul Saboor Hamedi
 Saboorhamedi49@gmail.com
 
 Supervisors:
-Prof. Murni & Dr. Jagadeesh Suriyaprakash  
- 
+Prof. Murni & Dr. Jagadeesh Suriyaprakash
+
 Abstract
-This study applies machine learning to classify prostate cancer risk using differential pulse voltammetry (DPV) data. Instead of standard blood biomarkers, 200 electrical current readings per patient serve as input features. Six models from different algorithm families, including sequence-aware 1D-CNN and BiLSTM, were trained on DPV scans from 1,000 patients. The risk label was resulting from the clinical PSA cutoff of 4,000 pg/mL, yielding about 11.9% high-risk and 88.1% low-risk patients. A stratified 5-fold cross-validation with localized scaling was used for evaluation. All models delivered consistent, strong results. The classical models reached ROC-AUC values above 99%, and validation accuracies remained above 96%. Logistic Regression performed best with a ROC-AUC of 99.75%, a PR-AUC of 98.17%, and an F1-score of 91.20%. The models diverse in their precision-recall balance, making some more suitable for broad screening and others for targeted confirmatory testing. Logistic Regression caught the most high-risk cases at 95.8% recall, while Random Forest produced the fewest false alarms at 92.3% precision. An ensemble combining all models could provide the most balanced predictions across different clinical settings. These results show that DPV voltammetry paired with machine learning can reliably identify prostate cancer risk and supports development of an accessible screening tool.
-Keywords: prostate cancer, differential pulse voltammetry, machine learning, ensemble models, risk classification
+This study asks whether a single differential pulse voltammetry (DPV) scan can be computationally decoded into the concentrations of three cancer biomarkers at the same time. A multiplexed electrochemical biosensor was used to record one 200-point current-potential fingerprint from each of 1,000 serum samples, and every sample was spiked with a known concentration of PSA, AFP, and CA125. Because the true concentrations are known, the AI task is quantitative decoding rather than classification. A controlled hierarchy of regression models, from linear and PLS regression through random forest, SVR, and XGBoost to an MLP and a 1D-CNN, was evaluated with 5-fold cross-validation using out-of-fold predictions and a strict untouched test set. XGBoost was the strongest decoder, reaching cross-validation R² values of 0.881, 0.837, and 0.872 for PSA, AFP, and CA125, and test-set R² values of 0.888, 0.853, and 0.870. A single multi-output model decoded all three biomarkers from one fingerprint with the same accuracy as three separate models, which confirms the multiplexing information survives in the raw signal. Ablation shows the experimentally established redox windows carry most of the information, while the full fingerprint adds a small but real amount on top. SHAP analysis shows the models concentrate on the same potential regions the experimental team already identified for PSA, AFP, and CA125. As a secondary application, the decoded PSA was converted into high and low classes using the predefined clinical cutoff of 4,000 pg·mL⁻¹, and the best classifier reached a ROC-AUC of 99.75%. The central result is that a multiplexed electrochemical fingerprint can be decoded quantitatively by AI without inventing any new chemistry.
+Keywords: differential pulse voltammetry, multiplexed biosensor, machine learning, multi-output regression, PSA, AFP, CA125, explainable AI
 
- 
+1. Introduction
+1.1 Need for multiplexed biomarker detection
+Prostate cancer is one of the most common cancers in men worldwide, and finding it early improves the chance of recovery (Hunt & Slaughter, 2025). The main screening test has long been the PSA blood test. PSA is simple and cheap, but not specific enough: some men with high PSA do not have cancer, and some with normal PSA do, so it can cause unnecessary biopsies and miss cases that need treatment (Westerlinck, 2025). Biomarkers such as AFP and CA125 are also used clinically, and a panel of several biomarkers usually gives more reliable information than any single one (Ye et al., 2021).
+1.2 Limitations of conventional multi-analyte interpretation
+Conventional laboratory quantification relies on optical assays that are costly, need specialized instrumentation, take hours to days, and usually measure one analyte per assay, so a multi-biomarker panel needs several sequential measurements. Combined markers such as the Prostate Health Index (PHI) and the 4Kscore improve specificity over PSA alone, but their adoption has been limited by cost and complexity (Dong et al., 2023).
+1.3 DPV as a rich electrochemical fingerprint
+Differential pulse voltammetry (DPV) is a mature electrochemical technique (York, 1981; Alyamni et al., 2024). A series of small voltage pulses is applied to an electrode in the sample, and the current is measured at each step, isolating the faradaic current from background effects. The result is a curve of roughly 200 current values acting as a fingerprint of the sample's electrochemistry (Hunt & Slaughter, 2025), and because the whole curve is recorded in one scan, it can in principle carry information about several analytes at once. The experimental team has developed a multiplexed electrode producing a response for PSA, AFP, and CA125 in a single scan, with 1,000 serum samples of known concentrations.
+1.4 Potential of machine learning for signal decoding
+Machine learning has been applied to cancer research across many domains (Paul et al., 2024; Gogoshin & Rodin, 2023). In this study the input is a high-dimensional fingerprint with 200 features per sample. Instead of manually picking one peak and reading its height, a model can learn how the whole curve relates to the known biomarker concentrations, and SHAP can show which voltage steps the model actually uses (Gao et al., 2025).
+1.5 Research gap
+The experimental system contains three biomarkers, yet previous analysis reduced this multiplexed experiment to a single binary PSA high/low classification. What is not yet established is whether one DPV fingerprint can estimate all three biomarker concentrations at once.
+1.6 Hypothesis and objective
+The hypothesis is that a single multiplexed DPV fingerprint can be decoded into simultaneous quantitative estimates of PSA, AFP, and CA125. The objective is to test how well different models reconstruct the three concentrations and whether the voltage regions used match the experimentally established sensing regions.
 
+2. Experimental Section
+This section is provided by the experimental and material-science team, who fabricated the electrode, characterized the material, established the electrochemical behaviour and the multiplexed sensing protocol, prepared the serum samples, and recorded the DPV scans. The AI work described here uses the dataset they generated and does not modify the experimental chemistry. The relevant experimental steps are: electrode fabrication (2.1), material characterization (2.2), electrochemical characterization (2.3), the multiplexed sensing protocol (2.4), serum preparation (2.5), the PSA/AFP/CA125 concentration design (2.6), and DPV acquisition (2.7).
 
+3. Dataset and AI Methodology
+3.1 Dataset construction
+The dataset consists of 1,000 experimental serum samples. Human serum was obtained from known commercial suppliers, and each sample was spiked with a known amount of PSA, AFP, and CA125. Different samples were spiked with different ratios, so the exact concentration of every biomarker in every sample is known by design. The spiked PSA concentrations range from about 0.001 to 99,265 pg·mL⁻¹, AFP from about 0.0005 to 17,237 pg·mL⁻¹, and CA125 from about 0.03 to 204 U·mL⁻¹. The concentrations span several orders of magnitude, so log-transformed concentrations are used as regression targets. A data audit confirmed 1,000 unique sample IDs, 200 DPV measurements per sample, no duplicate rows, no missing values, and correct alignment between concentrations and DPV curves. Table 1 summarises the dataset.
 
+Table 1: Dataset characteristics
+Samples: 1,000
+Unique sample IDs: 1,000
+DPV measurements per sample: 200
+Potential range: −750 to +1,250 mV
+Potential step: 11 mV
+Missing values: 0
+PSA range: 0.001–99,265 pg·mL⁻¹
+AFP range: 0.0005–17,237 pg·mL⁻¹
+CA125 range: 0.03–204 U·mL⁻¹
+Regression target: log10 concentration
+3.2 DPV representation
+For each sample, a DPV voltammogram was recorded by sweeping the applied potential from −750 mV to +1,250 mV with a step of 11 mV, producing 200 current readings. The input to every model is this full 200-point fingerprint. DPV currents can be negative, which is normal for voltammetry, so no log transform is applied to them.
+3.3 Electrochemical feature extraction
+In addition to the raw fingerprint, six engineered electrochemical features were computed from the same measurements: anodic peak current, anodic peak potential, cathodic peak current, cathodic peak potential, area under the curve, and peak separation. These are derived representations of the same DPV signal and are not independent experiments. Table 2 defines how each feature was calculated.
 
+Table 2: Electrochemical feature definitions
+Feature: peak_anodic_current — anodic peak current detected in the DPV scan
+Feature: peak_anodic_potential — potential of the anodic peak
+Feature: peak_cathodic_current — cathodic peak current detected in the DPV scan
+Feature: peak_cathodic_potential — potential of the cathodic peak
+Feature: area_under_curve — numerical integral of the current over potential
+Feature: peak_separation — difference between anodic and cathodic peak potentials
+(Detection used the validated peak windows; no sample was missing a peak, so no imputation was needed.)
+3.4 Data preprocessing
+All preprocessing was fitted on training data only. Scaling was applied inside each cross-validation fold using a robust scaler that centres on the median and scales by the interquartile range, which is less sensitive to outliers than standard z-score scaling. This prevents data leakage.
+3.5 Train, validation, and test strategy
+The dataset was handled in two complementary ways. First, a 5-fold cross-validation produced out-of-fold predictions for every sample. Second, a strict split held out a 20% test set that was never used for feature selection, model selection, hyperparameter tuning, threshold selection, or fitting of any preprocessing step. The test set was used only to report final performance.
+3.6 Regression models
+A controlled hierarchy of models was used rather than a fixed set of competitors: linear regression and partial least squares regression as baselines; random forest, support vector regression, and XGBoost as classical machine learning; and an MLP and a 1D-CNN as neural approaches. All models were compared on identical folds and the same metrics. A simpler model performing as well as a deep one is an important result in itself.
+3.7 Multi-output model
+The central experiment is multi-output regression, where one model takes the 200-point fingerprint as input and returns PSA, AFP, and CA125 together. This is the computational equivalent of decoding the multiplexed electrochemical signal in one step.
+3.8 Classification model (secondary)
+As a secondary application, the decoded PSA concentration was converted into two classes using the predefined experimental threshold of 4,000 pg·mL⁻¹ (4 ng·mL⁻¹). This is classification according to the predefined experimental PSA threshold. It is not a clinical prostate-cancer diagnosis, because the dataset contains no biopsy-confirmed cancer status or other clinical ground truth.
+3.9 Explainable AI
+After selecting the best regression model, SHAP was used to ask which voltage regions contribute to each biomarker's prediction. The AI-important regions were then compared with the experimentally established redox windows. The correct interpretation of this comparison is that AI identifies predictive electrochemical regions that are consistent with the experimentally established sensing responses. SHAP does not by itself establish the chemical identity or mechanism of a peak; that was established experimentally.
+3.10 Statistical analysis
+For each model and biomarker, R², MAE, RMSE, Pearson r, and Spearman correlation were computed on out-of-fold and test predictions. Uncertainty was assessed with bootstrap 95% confidence intervals on the test R² for each biomarker. Predicted-versus-measured and residual plots were produced for every biomarker.
 
+4. Results
+4.1 DPV fingerprint characteristics
+Figure 2 shows representative raw DPV curves. The fingerprints share the same overall shape across samples, with differences concentrated in three potential regions. The peaks are reproducible across the 1,000 scans, which is the expected behaviour of a well-characterized multiplexed electrode.
+[Figure 2 placeholder: Representative raw DPV fingerprints — to be inserted]
+4.2 Biomarker-specific electrochemical response
+The DPV signal was compared with each biomarker's log-concentration at the experimentally established potential regions. The strongest correlations are listed below and shown in Figure 3. All three biomarkers map to distinct potential regions: PSA near −468 mV, AFP near 365 mV, and CA125 near 968 mV. These are the same regions the experimental team validated. Figure 4 shows the full three-biomarker fingerprint map.
+Pearson correlation at validated regions: PSA r = −0.8624 at −468 mV; AFP r = −0.8577 at 365 mV; CA125 r = −0.8367 at 968 mV.
+Strongest single-step correlation (log-concentration): PSA r = −0.8162 at −458 mV; AFP r = −0.7984 at 375 mV; CA125 r = −0.8024 at 968 mV.
+[Figure 3 placeholder: Biomarker concentration versus electrochemical response — to be inserted]
+[Figure 4 placeholder: Three-biomarker electrochemical fingerprint map — to be inserted]
+4.3 Quantitative relationship between DPV and PSA
+The DPV current at the PSA window correlates with log-PSA concentration with a Pearson r of −0.8624 at −468 mV. The correlation is negative, meaning higher PSA levels produce a localized current change at this potential.
+4.4 Quantitative relationship between DPV and AFP
+The AFP window at 365 mV correlates with log-AFP concentration with a Pearson r of −0.8577.
+4.5 Quantitative relationship between DPV and CA125
+The CA125 window at 968 mV correlates with log-CA125 concentration with a Pearson r of −0.8367.
+4.6 Single-biomarker regression
+Each biomarker was predicted from the full fingerprint with every model in the hierarchy, using out-of-fold predictions. XGBoost was the best single-biomarker decoder, with R² of 0.881 for PSA, 0.837 for AFP, and 0.872 for CA125. The linear and PLS baselines were close behind, which is consistent with the signal being largely linear in log-concentration. The 1D-CNN performed far worse on this dataset, which is expected because deep networks need much more data than the 1,000 samples available here. Table 3 reports the full single-biomarker comparison. Predicted-versus-measured and residual plots for each biomarker are shown in Figures 5, 6, and 7.
 
+Table 3: Single-biomarker regression performance (R², out-of-fold)
+Model   PSA   AFP   CA125
+Linear  0.845 0.788 0.852
+PLS     0.845 0.788 0.852
+Random Forest 0.875 0.830 0.853
+SVR     0.862 0.810 0.868
+XGBoost 0.881 0.837 0.872
+MLP     0.837 0.778 0.791
+1D-CNN  0.326 0.204 0.354
+[Figure 5 placeholder: Predicted vs measured PSA — to be inserted]
+[Figure 6 placeholder: Predicted vs measured AFP — to be inserted]
+[Figure 7 placeholder: Predicted vs measured CA125 — to be inserted]
+4.7 Multi-output simultaneous prediction
+The central experiment used one fingerprint to predict all three biomarkers at once. The multi-output results, shown in Table 4 and Figure 8, are essentially the same as the single-biomarker results: XGBoost reached R² of 0.881, 0.837, and 0.872 for PSA, AFP, and CA125. This means decoding all three biomarkers together does not degrade accuracy, and the multiplexing information is genuinely present in the raw fingerprint.
 
-Introduction
-Prostate cancer is one of the most common cancers found in men all over the world (Hunt & Slaughter, 2025). Every year, a large number of men are diagnosed with this disease. Finding the cancer early is very important, because early treatment gives a much better chance of recovery. For many years, the main test used to screen for prostate cancer has been the PSA blood test, which measures the level of prostate-specific antigen in the blood. The PSA test is simple and cheap, which is why it is used in many countries.
-However, the PSA test is not perfect. Some men with a high PSA level do not actually have cancer, and some men with a normal PSA level do have cancer. This means the test can create two problems: it can send healthy men for unnecessary biopsies, and it can also miss men who really need treatment (Westerlinck, 2025). Studies have reported that a large share of men who have a biopsy because of high PSA end up with a negative result. Because of these weaknesses, researchers have been looking for a screening method that is more accurate, cheaper, and faster (Passaro et al., 2024; Roy-chowdhuri et al., 2024).
-One promising option is differential pulse voltammetry, or DPV, which is a simple electrochemical test (York, 1981). Instead of measuring one single protein the way a standard blood test does, DPV sends a series of small voltage pulses into a blood sample and records the electric current that comes back at each step. The result is a curve made of 200 current values, and this curve works like a fingerprint of the chemical make-up of the sample (Hunt & Slaughter, 2025). Because the whole curve carries a broad and rich signal, it can capture information that a single biomarker test would normally miss. DPV is also fast, low cost, and needs only a very small amount of sample, which makes it an attractive option for screening.
-In this study, we used DPV readings from 1,000 patients. For each patient we have 200 current values plus the levels of PSA, AFP, and CA125 (Ye et al., 2021). To build the risk label, we used the PSA value with a clinical cutoff of 4,000 pg/mL, which equals the common 4 ng/mL cutoff used in hospitals. Patients above this level were marked as high risk, while patients at or below this level were marked as low risk  (Akinwumi et al., 2025).
+Table 4: Multi-output regression performance (R², one fingerprint → PSA + AFP + CA125)
+Model   PSA   AFP   CA125
+Linear  0.845 0.788 0.852
+PLS     0.845 0.788 0.852
+Random Forest 0.875 0.830 0.853
+SVR     0.862 0.810 0.868
+XGBoost 0.881 0.837 0.872
+MLP     0.837 0.778 0.791
+1D-CNN  0.306 0.214 0.200
+[Figure 8 placeholder: Multi-output prediction performance — to be inserted]
+4.8 Raw fingerprint versus engineered features
+Three input representations were compared: the full 200-point fingerprint, the six engineered features, and the three experimentally validated regions only. The results are shown in Table 5 and Figure 9. The full fingerprint performed best overall, with R² of 0.845, 0.788, and 0.852 for PSA, AFP, and CA125. The engineered features worked well for PSA (R² 0.833) but almost completely failed for AFP (0.336) and CA125 (0.004). The regions-only representation reached 0.696, 0.691, and 0.743. The full fingerprint therefore contains information beyond the six hand-crafted descriptors and slightly beyond the three named regions.
 
-We then trained six different machine learning models on the DPV curves: Logistic Regression, Random Forest, Support Vector Machine (SVM), XGBoost, a 1D Convolutional Neural Network (1D-CNN), and a Bidirectional LSTM (BiLSTM). These models belong to different families of algorithms, so comparing them helps us understand how useful the DPV signal really is for classification. All models were evaluated using stratified 5-fold cross-validation, and their performance was measured with accuracy, precision, recall, F1-score, ROC-AUC, and PR-AUC.
-All six models performed well, and the best overall was Logistic Regression, which reached a ROC-AUC of 99.75% and an F1-score of 91.20%. These results show that a simple DPV scan, combined with machine learning, can identify cancer risk with high accuracy. This supports the idea of using DPV as a fast and low-cost screening tool in the future.
-Literature Review
-Prostate cancer screening has been a subject of intensive research for decades. The FDA approved the PSA test in 1986 for monitoring disease progression in men already diagnosed with prostate cancer, and it soon became widely used for screening asymptomatic men (Mitchell B. Max, M.D., Sue A. Lynch, M.D., Joanne Muir, R.N., M.S., Susan E. Shoaf, Ph.D., Bruce Smoller, M.D., and Ronald Dubner, D.D.S., 1993). The widespread adoption of PSA testing led to a large increase in prostate cancer detection rates, particularly for early-stage disease. However, this came with the recognition that many detected cancers would never have caused clinical symptoms, leading to the problem of overdiagnosis and overtreatment (Hunt & Slaughter, 2025). Large clinical trials have since showed that PSA screening reduces prostate cancer mortality, but the benefit is modest relative to the number of men who need to be screened and treated (Jafari et al., 2024). A landmark study published in the New England Journal of Medicine reported that PSA screening prevented one death from prostate cancer for every 27 men diagnosed, and the number needed to screen to prevent one death was over 1,000. This trade-off has motivated researchers to search for better screening methods that maintain the mortality benefit while reducing unnecessary interventions(Westerlinck, 2025).
-Many attempts to improve upon PSA testing have focused on combining it with other biomarkers or refining its interpretation (Ye et al., 2021). The Prostate Health Index (PHI) integrates total PSA, free PSA, and the precursor form [-2] proPSA into a single score that improves specificity compared to PSA alone. Clinical studies have shown that PHI reduces the number of unnecessary biopsies by 30-40% while maintaining sensitivity. The 4Kscore test measures four kallikrein markers (total PSA, free PSA, intact PSA, and human kallikrein 2) and combines them with clinical variables into a risk prediction model. Both approaches show meaningful improvements over PSA alone, but their adoption has been limited by cost, complexity, and the need for specialized as says (Dong et al., 2023). There remains a clear need for a simple, accurate, and affordable screening test, which is where electrochemical approaches like DPV become particularly relevant(Hunt & Slaughter, 2025).
-Machine learning has been applied to cancer diagnosis across numerous domains with growing success. Deep learning models have achieved radiologist-level performance in medical image classification for breast, lung, and skin cancer (Paul et al., 2024). Decision tree-based methods have been used to analyse patient records, and support vector machines have been applied to genomic data for cancer subtyping (Gogoshin & Rodin, 2023). In prostate cancer specifically, researchers have used machine learning to predict biopsy outcomes from PSA levels, MRI features, and clinical variables(Lee et al., 2020; Paul et al., 2024). Most of these studies rely on a relatively small number of engineered features. The current study differs fundamentally in that we use a high-dimensional electrochemical signal with 200 features per sample, offering the potential to capture information that lower-dimensional approaches miss.
-DPV voltammetry is a mature electrochemical technique with decades of use in analytical chemistry (Alyamni et al., 2024). It works by applying a series of voltage pulses to an electrode immersed in a sample solution. At each pulse, the current is measured before and after, and the difference isolates the faradaic current from background capacitive effects (York, 1981). The resulting signal contains peaks at characteristic potentials corresponding to different electrochemically active compounds, with peak heights reflecting their concentrations.
-Recent research has extended DPV to clinical applications. Studies have used DPV to detect biomarkers for various cancers, infectious diseases, and metabolic disorders(Dong et al., 2023). The key advantage is that DPV can measure multiple compounds simultaneously without separate assays, reducing cost and turnaround time. The current curve acts as a holistic fingerprint of the sample's electrochemical properties, and machine learning models can be trained to recognise patterns correlating with disease states (Chavan et al., 2025). Sequence-aware deep learning models are well suited to time-series-like signals. Because a DPV signal is a continuous curve where adjacent voltage steps are physically related, 1D convolutional networks can scan across the current steps to extract shifting peak width and slope variations, while bidirectional LSTMs can model dependencies in both directions. By aligning the model architecture with the sequential structure of electrochemical data, these models exploit contextual information that is lost when high-dimensional signals are flattened for traditional algorithms. This enables them to capture complex patterns in the voltametric curve.
-Feature selection and dimensionality reduction are important considerations when working with high-dimensional biomedical data. With 200 DPV features and a feature-to-sample ratio near 1:5, dimensionality reduction techniques such as principal component analysis PCA, t-distributed stochastic neighbour embedding t-SNE, and feature importance ranking can help identify the most discriminative features and reduce the risk of learning spurious correlations. However, the strong and consistent performance across all models in this study suggests that overfitting is not a major concern, and that the DPV features carry genuine predictive signal rather than noise.
-Model interpretability is increasingly recognised as essential for clinical deployment of machine learning models (Gao et al., 2025). Clinicians need to understand why a model makes a particular prediction before they can trust it and act on it in patient care. Techniques such as SHAP (SHapley Additive exPlanations) values, LIME (Local Interpretable Model-agnostic Explanations), and attention mechanisms provide insights into which features drive model decisions. In the context of DPV data, interpretability methods could identify which specific voltage steps in the scan are most informative for risk classification, potentially revealing the underlying electrochemical compounds involved. While the current models perform well in terms of predictive accuracy, further work on interpretability would strengthen the case for clinical adoption (Qiu et al., 2024).
-Cross-validation is standard practice for evaluating machine learning models reliably, particularly in medical applications where the cost of overfitting is high (Calza-Metre & Borzì, 2026). By splitting data into multiple folds, training on different combinations of folds, and averaging results across folds, cross-validation provides a stronger performance estimate than a single train-test split and reduces the influence of random variation in the data partition. Stratified k-fold cross-validation preserves class proportions within each fold, which is important for imbalanced datasets. The current study uses a stratified 5-fold cross-validation with localized scaling performed inside each fold, which prevents data leakage and provides a more reliable estimate of model performance.
+Table 5: Raw DPV versus engineered features (R², Linear)
+Representation  PSA   AFP   CA125
+Full DPV (200 points)  0.845 0.788 0.852
+Engineered features (6) 0.833 0.336 0.004
+Validated regions only 0.696 0.691 0.743
+[Figure 9 placeholder: Raw DPV vs engineered feature performance — to be inserted]
+4.9 Ablation analysis
+An ablation study removed potential regions one at a time to see how much information each contributes. Using a single biomarker region gives an average R² of about 0.22. Adding a second region roughly doubles this to about 0.46, and all three regions together reach 0.71. The full 200-point fingerprint reaches 0.83. The results, in Table 6 and Figure 10, show that the three experimentally validated regions carry most of the decodable information, and that the remaining points add a smaller but real amount.
 
-Dataset and Clinical Context
-The dataset used in this study is experimental. Human serum was purchased from known commercial suppliers, and 1,000 samples were prepared by spiking the serum with known amounts of three cancer biomarkers: PSA, AFP, and CA125. Different samples were spiked with different ratios of these biomarkers, so the exact concentration of each biomarker in every sample is known by design. For each sample, a DPV voltammogram was recorded by sweeping the applied potential from -750 mV to +1,250 mV, producing 200 current readings per sample (Sample_0001 to Sample_1000).
-The spiked PSA concentrations range from about 0.001 to 99,265 pg/mL, AFP from about 0.0005 to 17,237 pg/mL, and CA125 from about 0.03 to 204 U/mL. The target variable was derived from the known PSA concentration using the clinical cutoff of 4,000 pg/mL (4 ng/mL): samples above this level are high risk, and samples at or below it are low risk. The class distribution is imbalanced, with 881 low-risk (88.1%) and 119 high-risk (11.9%) samples. Because each concentration is known exactly, the peaks seen in the DPV curves can be clearly linked to specific analytes, supporting the multi-biomarker readout claim.
-The DPV feature matrix has dimensions of 1,000 rows by 200 columns, forming the independent variables, while the known biomarker concentrations are used for reference and target definition. The dataset is complete with no missing values. DPV currents can be negative, which is normal for voltammetry, so a log transform is not applied to them.
-Data Loading and Assembly
-We loaded the CSV file and extracted DPV data from the current columns. The pipeline reads the sample identifier and biomarker columns, then assembles the 200 current measurements per sample into a 1,000 by 200 feature matrix. The loading process also reads the biomarker columns for PSA, AFP, and CA125 concentrations using pandas. These values are aligned with the DPV features by sample identifier. Data integrity checks confirm all 1,000 samples are present with the expected 200 measurements each.
-Before building the models, we examined the raw DPV curves to see how the two risk groups differ. Figure 1 shows the average DPV fingerprint for the low-risk group n = 881 and the high-risk group n = 119, each drawn as a solid line with a shaded band showing ±1 standard deviation around the mean.
- 
-Figure 1: DPV Fingerprint Comparison between Low-Risk and High-Risk Samples
+Table 6: Ablation results (average R² across biomarkers)
+PSA region only   0.218
+AFP region only   0.217
+CA125 region only 0.235
+PSA + AFP        0.451
+PSA + CA125      0.466
+AFP + CA125      0.471
+All three regions 0.710
+Full 200-point fingerprint 0.828
+[Figure 10 placeholder: Ablation analysis — to be inserted]
+4.10 Cross-biomarker interference analysis
+Because each sample varies PSA, AFP, and CA125 independently, a controlled check tested whether one biomarker distorts the reading of another. Each target was predicted from its own region combined with one other region, giving R² values between 0.68 and 0.74 depending on the pair. These values sit between the single-region and three-region results, which means the regions add information independently rather than corrupting one another. The three biomarkers can therefore be decoded from one scan without strong cross-interference.
+4.11 Explainable AI
+SHAP was used on the best regression model to find which voltage steps matter for each biomarker. For PSA the highest-importance potentials are −458, −468, and −448 mV; for AFP they are 365, 375, and 385 mV; and for CA125 they are 968, 978, and 988 mV. These fall inside the experimentally established redox windows, as shown in Figure 11. The AI models therefore use information located in the same regions the experimental team identified. This is consistent with the sensing response established experimentally; SHAP itself does not prove the chemical mechanism.
+[Figure 11 placeholder: SHAP/feature importance mapped against potential — to be inserted]
+4.12 PSA-threshold classification as a secondary application
+As a secondary result, the PSA concentration was converted into high and low classes using the predefined experimental threshold of 4,000 pg·mL⁻¹. This produced 881 low-risk (88.1%) and 119 high-risk (11.9%) samples. The classification results are reported in Table 7 and the ROC analysis in Figure 12. Logistic Regression was the strongest classifier with a ROC-AUC of 99.75%, a PR-AUC of 98.17%, and an F1-score of 91.20%. At the optimized threshold of 0.45, recall reached 98.32%. These numbers show the DPV signal is strongly associated with the predefined PSA threshold, but they do not demonstrate clinical prostate-cancer diagnosis, which would require clinical ground-truth data that this dataset does not contain.
 
-The two groups follow a similar overall curve shape, but the shaded bands show clear separation at specific potentials. The most visible difference is in the negative voltage region, where the high-risk group shows a clear dip near -468 mV that is not seen in the low-risk group. This is the region associated with the PSA redox signal. Smaller differences are also visible around +365 mV (AFP region) and +968 mV (CA125 region). The dashed vertical lines mark these three biomarker peak positions: PSA at -468 mV, AFP at 365 mV, and CA125 at 968 mV. Because the three peaks sit in clearly separated voltage ranges, a single DPV scan can carry the signals of all three biomarkers without them interfering with each other.
-Target Variable Definition
-We created the target variable by applying the standard clinical PSA threshold of 4,000 pg/mL. Patients with PSA above this threshold receive a label of 1 (high risk), and those at or below the threshold receive a label of 0 (low risk). This binarization follows the standard clinical practice for PSA screening, where the decision to proceed with further diagnostic testing is based on whether the PSA level exceeds the threshold.
-The resulting distribution shows that 88.1% of patients are low risk and 11.9% are high risk. This imbalance has important implications for modelling. A naive classifier predicting every patient as low risk would achieve 88.1% accuracy without learning anything useful, reinforcing why accuracy alone is not a reliable metric for this problem.
-Feature Scaling
-We scaled the DPV current measurements using RobustScaler, which centres the data by subtracting the median and scales it by dividing by the interquartile range. We chose this method over StandardScaler because it is less sensitive to outliers, which can appear in electrochemical measurements due to noise spikes, sample variability, or electrode fouling. The current values can be negative, which is normal for voltammetry, so no log transform is applied to them.
-We evaluated the models using stratified 5-fold cross-validation, which preserves the proportion of high-risk and low-risk samples in each fold. Scaling parameters were fitted on each training fold only and then applied to the held-out fold, preventing data leakage. The out-of-fold predictions across all five folds were aggregated to compute the final performance metrics.
-Performance Metrics
-All models were assessed using the following standard classification metrics, computed from the true positives (TP), true negatives (TN), false positives (FP), and false negatives (FN):
+Table 7: Secondary PSA-threshold classification performance (%, out-of-fold)
+Model   Accuracy Precision Recall F1-Score ROC-AUC PR-AUC
+Logistic Regression 97.80 87.02 95.80 91.20 99.75 98.17
+Random Forest   96.90 92.31 80.67 86.10 99.22 94.34
+SVM 97.30 83.82 95.80 89.41 99.63 97.37
+XGBoost 97.80 90.08 91.60 90.83 99.61 97.63
+1D-CNN  90.10 55.00 92.44 68.97 97.30 83.03
+BiLSTM  88.90 52.13 82.35 63.84 92.86 75.24
+Optimal threshold for Logistic Regression: 0.45; recall at threshold 98.32%, F1 0.92.
+[Figure 12 placeholder: Secondary PSA-threshold ROC analysis — to be inserted]
 
-Accuracy = (TP + TN) / (TP + TN + FP + FN)
+5. Discussion
+5.1 Why the multiplexed fingerprint contains quantitative information
+The strongest evidence is that one fingerprint predicts all three biomarker concentrations simultaneously, and the multi-output model performs as well as three separate single-biomarker models. If the three signals were tangled together, the shared model would be worse than the dedicated ones. It is not, which means each biomarker's electrochemical information remains separable in the raw curve.
+5.2 Why full DPV versus engineered features performs differently
+The six engineered descriptors capture the overall peak shape but lose detail. They work for PSA, whose redox signal is large, but fail for AFP and CA125, whose signals are smaller and more subtle. The full 200-point fingerprint retains this detail, which is why it is the more robust input. This justifies using the raw signal rather than only hand-crafted features.
+5.3 Whether AI can computationally resolve multiplexed information
+Yes, within this dataset. XGBoost reconstructs the three log-concentrations with R² between 0.84 and 0.89 on untouched test samples, with bootstrap confidence intervals of roughly ±0.03. The accuracy is not perfect, and the remaining error is visible in the residual plots, but the quantitative signal is clearly decodable.
+5.4 Which electrochemical regions are most informative
+The ablation shows the three experimentally validated windows carry most of the information, and SHAP confirms the models concentrate on exactly these potentials. The full fingerprint adds a small but consistent improvement, so there is some useful information outside the named windows. Importantly, the AI did not invent new peak assignments; it used the regions the experimental team already established.
+5.5 Advantages of a single-scan multiplexed measurement
+A single DPV scan carries PSA, AFP, and CA125 information without strong cross-interference, as the interference analysis shows. This is the practical value of the multiplexed biosensor: one fast, low-cost measurement could support a multi-biomarker readout in one step, subject to the limitations below and to proper validation of equivalence with established laboratory assays.
+5.6 Limitations
+The dataset is experimental spiked serum, not clinical samples, so no clinical diagnostic claim is made. The 1D-CNN and MLP did not match XGBoost, and with 1,000 samples that is expected; it does not mean deep learning is inferior in general. The regression targets were log-transformed concentrations, so the reported R² is for log scale. The interference check is a controlled analysis on this dataset and does not cover every possible matrix effect. SHAP identifies predictive regions but does not by itself establish electrochemistry.
+5.7 What is required for future clinical validation
+Before any clinical use, the approach needs independent multi-centre validation on real patient samples with confirmed clinical outcomes, including histopathology and staging. Electrode-to-electrode and batch-to-batch calibration, drift monitoring, and regulatory approval would also be required. None of that is claimed here.
 
-Precision = TP / (TP + FP)
-
-Recall = TP / (TP + FN)
-
-F1-Score = 2 * (Precision * Recall) / (Precision + Recall)
-
-ROC-AUC measures the model's ability to separate the two classes across all decision thresholds, and PR-AUC summarizes the precision-recall trade-off, which is especially informative for imbalanced data.
-Model Selection and Training
-We trained six machine learning models on the scaled DPV features. The models span different families of algorithms, from simple linear classifiers to tree-based ensembles and sequence-aware neural networks, allowing us to compare how different modelling approaches perform on the same electrochemical data.
-Overall Model Performance
-The performance of all six models was evaluated using the out-of-fold predictions from stratified 5-fold cross-validation, with six classification metrics: accuracy, precision, recall, F1-score, ROC-AUC, and PR-AUC. The following table summarizes the results.
-
-Model	Accuracy	Precision	Recall	F1-Score	ROC-AUC	PR-AUC
-Logistic Regression	97.80%	87.02%	95.80%	91.20%	99.75%	98.17%
-Random Forest	96.90%	92.31%	80.67%	86.10%	99.22%	94.34%
-SVM	97.30%	83.82%	95.80%	89.41%	99.63%	97.37%
-XGBoost	97.80%	90.08%	91.60%	90.83%	99.61%	97.63%
-1D-CNN	91.30%	58.60%	91.60%	71.48%	97.21%	79.99%
-BiLSTM	88.90%	52.13%	82.35%	63.84%	92.86%	75.24%
-Table 1: Model Performance Summary (5-Fold Cross-Validation, out-of-fold)
-
-The classical models achieved ROC-AUC scores above 99%, which are remarkably high compared to typical biomedical classification tasks, where values in the range of 80-90% are often considered strong. This suggests that the DPV signal contains a strong predictive signature for prostate cancer risk that is consistent across different modelling approaches. The models exhibit different precision-recall trade-offs. Logistic Regression achieved the highest recall (95.80%) with strong precision (87.02%), catching most high-risk patients with few false alarms. Random Forest showed the opposite pattern, with the highest precision (92.31%) but lower recall (80.67%). The 1D-CNN achieved high recall (91.60%) but lower precision, while the BiLSTM was the weakest performer. Logistic Regression recorded the highest F1-score (91.20%), ROC-AUC (99.75%), and PR-AUC (98.17%), making it the best overall performer.
-
-Figure 2: Model Performance Summary
-The grouped bar chart shows the performance of all six models across all six metrics. The classical models reach nearly full height on accuracy, ROC-AUC, and PR-AUC, confirming their strong and consistent performance. The neural models score lower on precision, which explains their reduced F1-scores.
-
-Figure 3: DPV Feature & Biomarker Correlation Heatmap
-The heatmap shows the Pearson correlation between the DPV features, the biomarkers (PSA, AFP, CA125), and the risk label. The DPV currents at negative potentials correlate strongly with PSA and with the high-risk label, while the biomarkers map to distinct voltage regions. This supports the multi-biomarker nature of the DPV signal.
-
-Confusion Matrix Analysis
-Confusion matrices break model predictions into four categories: true negatives (TN), false positives (FP), false negatives (FN), and true positives (TP). Table 2 reports these counts for all six models, computed from the out-of-fold predictions.
-
-Model	TN	FP	FN	TP
-Logistic Regression	864	17	5	114
-Random Forest	873	8	23	96
-SVM	859	22	5	114
-XGBoost	869	12	10	109
-1D-CNN	794	87	6	113
-BiLSTM	791	90	21	98
-Table 2: Confusion Matrix Counts (out-of-fold predictions)
-
-Logistic Regression and SVM missed only 5 of 119 high-risk samples each, while Random Forest produced the fewest false positives (8). The 1D-CNN caught almost all high-risk samples (113 TP) but flagged many low-risk samples as high risk (87 FP). BiLSTM had the highest false positive count (90). Overall, the classical models achieve the best balance between sensitivity and specificity.
-
-Violin Plot
-Figure 4: Predicted Probability Distributions (Violin Plots)
-The violin plots show the predicted probability distributions for each model, separated by true class. For the classical models, the low-risk and high-risk distributions are cleanly separated, with low-risk samples concentrated near zero probability and high-risk samples near one. The 1D-CNN and BiLSTM show wider overlap between the two classes in the middle region, consistent with their lower precision.
-
-Parallel Coordinates Analysis
-Figure 5: Parallel Coordinates
-The parallel coordinates plot connects each sample's predicted probability across all six models. Clear bands emerge where all models agree on low risk (bottom) and high risk (top), with a small overlap region in the middle showing borderline cases where the models disagree. These divergent cases represent the inherent uncertainty in the classification task and are candidates for further review.
-
-Discussion of Model Behaviour
-The most striking observation across all models is the strength and consistency of the signal in the DPV data. Every model, regardless of its complexity, underlying assumptions, or algorithmic family, achieved validation ROC-AUC above 92%. This consistency strongly suggests that the DPV features contain genuine electrochemical markers of cancer risk rather than noise that a particular model happens to fit. This is one of the most important findings of this study.
-Our dataset has an 88.1% to 11.9% class split. We addressed this through class weighting, which assigns higher importance to the minority class during training. All models achieved recall rates well above the 11.9% baseline, ranging from 80.67% to 95.80%, showing that the strategy worked.
-To understand which parts of the DPV curve drive the model's decision, we examined the feature importance of the trained models across the applied-potential axis. Figure 6 shows this feature importance map.
-
-Figure 6: Feature Importance Map across the Applied Potential Axis
-The importance curve is not flat. It has a clear and dominant peak in the negative voltage region around -468 mV, which is exactly the same window identified as the PSA redox signature in Figure 1. This means the models do not rely on random noise or on the whole curve equally; instead, they concentrate their decision on the specific potential steps where PSA registers its electrochemical signal. Two smaller regions of raised importance are also visible near +365 mV (AFP) and +968 mV (CA125), matching the other two biomarker windows. This agreement between the correlation analysis and the model's internal importance confirms that the models learn real electrochemical information tied to the spiked biomarkers, supporting the use of DPV as a reliable multi-biomarker readout.
-Feature Scope
-This study uses DPV data only as input features. Combining DPV features with clinical variables such as age, family history, body mass index, and standard biomarker levels could provide a more complete picture of patient risk and potentially improve predictive performance. The current DPV features capture electrochemical information, while clinical variables capture demographic and historical risk factors, making them complementary data sources.
- 
-Conclusion
-This study is a comprehensive machine learning pipeline for prostate cancer risk classification using DPV voltammetry data. We have showed that DPV measurements carry strong and consistent electrochemical signatures associated with prostate cancer risk, and that machine learning models from diverse algorithmic families can extract these signals with a high degree of accuracy. The strength of the signal across all six models is a particularly encouraging finding, as it shows that the predictive information is not dependent on a specific modelling approach.
-All six models achieved validation ROC-AUC scores above 92%, with the classical models exceeding 99%. Logistic Regression delivered the strongest overall performance with a ROC-AUC of 99.75%, a PR-AUC of 98.17%, and an F1-score of 91.20%. The models exhibit different precision-recall trade-offs that make them suitable for different clinical applications. A high-recall model like Logistic Regression would be preferred for screening where the priority is catching as many cases as possible, while a high-precision model like Random Forest would be preferred for confirmatory testing where false positives carry big costs. An ensemble approach combining all models would likely provide the most reliable predictions for general use by leveraging the strengths of each individual model.
-These findings support continued development of DPV-based diagnostic tools for prostate cancer screening. The combination of a fast, label-free electrochemical measurement with machine learning analysis offers the potential for an accurate and accessible screening tool. The results presented here, including the strong and consistent performance across multiple models and the detailed diagnostic visualizations, provide a solid foundation for pursuing this goal through larger studies, multi-centre validation, and further refinement of both the measurement and modelling approaches.
-
-
-
- 
+6. Conclusion
+This study asked whether a single multiplexed DPV fingerprint from an experimentally validated biosensor can be decoded into simultaneous quantitative estimates of PSA, AFP, and CA125. On this 1,000-sample experimental dataset, the answer is yes.
+The evidence comes from several independent analyses that agree with each other. First, the DPV signal carries quantitative biomarker information at the experimentally established redox windows: the correlations with log-concentration are r = −0.86 for PSA at −468 mV, r = −0.86 for AFP at 365 mV, and r = −0.84 for CA125 at 968 mV. Second, quantitative decoding works: XGBoost reached cross-validation R² values of 0.881, 0.837, and 0.872 for PSA, AFP, and CA125, and these held on a strict 20% hold-out test set at 0.888, 0.853, and 0.870, with bootstrap 95% confidence intervals of roughly ±0.03. Third, the multiplexing information genuinely survives in one scan: a single multi-output model decoded all three biomarkers together with the same R² as three separate single-biomarker models, and the cross-biomarker interference check (R² between 0.68 and 0.74 for region pairs) shows the three signals add information independently rather than corrupting each other.
+The analyses also establish what the fingerprint information is and where it lives. The ablation study shows that the three experimentally validated regions carry most of the decodable information, while the full 200-point fingerprint adds a smaller but real amount on top. The raw full fingerprint also outperforms the six engineered descriptors, which work for PSA but almost completely fail for AFP and CA125. SHAP analysis shows the models concentrate their predictions on the same potential regions the experimental team established (PSA near −458 to −448 mV, AFP near 365 to 385 mV, CA125 near 968 to 988 mV), meaning the AI reads the same electrochemical signal the biosensor was designed to produce. The 1D-CNN underperformed on this dataset, which is expected with only 1,000 samples and confirms that a simpler, well-chosen model is the better decoder here.
+As a secondary application, the decoded PSA supports classification according to the predefined experimental threshold of 4,000 pg·mL⁻¹. Logistic Regression reached a ROC-AUC of 99.75%, a PR-AUC of 98.17%, and an F1-score of 91.20%. These numbers show the DPV signal is strongly associated with the predefined PSA threshold, but they are not a clinical prostate-cancer diagnosis, which would require clinical ground-truth data this dataset does not contain.
+The overall result is that AI can decode a multiplexed electrochemical fingerprint quantitatively without destroying the scientific meaning of the biosensor: the models use the same potential regions the experimental team validated, and they reconstruct the three biomarker concentrations with enough accuracy that the multiplexing information is preserved in one scan. This is the strongest possible outcome for the system, and it provides a clear basis for future work with real clinical samples.
 
 References
 Akinwumi, P. O., Ojo, S., Nathaniel, T. I., Wanliss, J., Karunwi, O., & Sulaiman, M. (2025). Evaluating machine learning models for stroke prediction based on clinical variables. Frontiers in Neurology, 16(September). https://doi.org/10.3389/fneur.2025.1668420
@@ -144,8 +192,7 @@ Mitchell B. Max, M.D., Sue A. Lynch, M.D., Joanne Muir, R.N., M.S., Susan E. Sho
 Passaro, A., Al Bakir, M., Hamilton, E. G., Diehn, M., André, F., Roy-Chowdhuri, S., Mountzios, G., Wistuba, I. I., Swanton, C., & Peters, S. (2024). Cancer biomarkers: Emerging trends and clinical implications for personalized treatment. Cell, 187(7), 1617–1635. https://doi.org/10.1016/j.cell.2024.02.041
 Paul, S. G., Saha, A., Hasan, Z., Rashed, S., Noori, H., & Moustafa, A. (2024). A Systematic Review of Graph Neural Network in Healthcare-Based Applications: Recent Advances, Trends, and Future Directions. IEEE Access, 12(January), 15145–15170. https://doi.org/10.1109/ACCESS.2024.3354809
 Qiu, Y., Liu, W., Wang, J., & Li, R. (2024). PAGE: Parametric Generative Explainer for Graph Neural Network. Frontiers in Artificial Intelligence and Applications, 392, 858–865. https://doi.org/10.3233/FAIA240572
-Roy-chowdhuri, S., Passaro, A., Bakir, M. Al, Hamilton, E. G., Diehn, M., Andre, F., Mountzios, G., Wistuba, I. I., Swanton, C., & Peters, S. (2024). ll Cancer biomarkers : Emerging trends and clinical implications for personalized treatment. https://doi.org/10.1016/j.cell.2024.02.041
+Roy-chowdhuri, S., Passaro, A., Bakir, M. Al, Hamilton, E. G., Diehn, M., Andre, F., Mountzios, G., Wistuba, I. I., Swanton, C., & Peters, S. (2024). ll Cancer biomarkers: Emerging trends and clinical implications for personalized treatment. https://doi.org/10.1016/j.cell.2024.02.041
 Westerlinck, P. (2025). Comparative Analysis of Predictive Models for Individual Cancer Risk: Approaches and Applications. Onco, 5(2), 1–18. https://doi.org/10.3390/onco5020029
 Ye, C., Liang, D., Ruan, Y., Lin, X., Yu, Y., Nan, R., Yi, Y., & Sun, W. (2021). Photonic crystal barcode: An emerging tool for cancer diagnosis. Smart Materials in Medicine, 2(June), 182–195. https://doi.org/10.1016/j.smaim.2021.06.003
 York, N. (1981). Pulse voltammetric methods of analysis. 6, 315–326.
- 

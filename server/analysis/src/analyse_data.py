@@ -36,6 +36,8 @@ from sklearn.svm import SVC
 from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
+import feature_extraction
+import regression_pipeline
 from cnn_model import train_cnn, train_bilstm
 from console_reports import (
     print_fold_cv_metrics,
@@ -126,7 +128,7 @@ def load_data(file_path):
     df = pd.read_csv(file_path)
     print(f"✓ Data loaded successfully")
     print(f"  Shape: {df.shape}")
-    print(f"  Columns: {df.columns.tolist()}")
+    # print(f"  Columns: {df.columns.tolist()}")
     return df
 
 
@@ -384,7 +386,7 @@ def create_advanced_confusion_matrix(y_true, y_pred, model_name, save_dir="../fi
     cm = confusion_matrix(y_true, y_pred)
     cm_percentage = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(12, 6))
 
     # Different style based on model
     if model_name == 'Logistic Regression':
@@ -579,7 +581,7 @@ def create_parallel_coordinates(results, y_val, save_dir="../figure"):
 
 def create_ridge_plot(results, y_val, save_dir="../figure"):
     """Create ridge plot (joyplot) for probability distributions."""
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(13, 7))
 
     models_list = list(results.keys())
     colors_ridge = ['#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#17becf', '#7f7f7f']
@@ -625,7 +627,7 @@ def create_ridge_plot(results, y_val, save_dir="../figure"):
 
 def create_violin_plots(results, y_val, save_dir="../figure"):
     """Create beautiful violin plots for model predictions."""
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8))
     axes_flat = axes.flatten()
 
     colors_violin = ['#2ca02c', '#1f77b4']
@@ -695,12 +697,12 @@ def create_correlation_heatmap(df, save_dir="../figure", voltage_labels=None):
 
     corr_matrix = df[corr_cols].corr()
 
-    fig, ax = plt.subplots(figsize=(16, 14))
+    fig, ax = plt.subplots(figsize=(14, 8))
     sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='RdBu_r',
                 xticklabels=corr_labels, yticklabels=corr_labels,
                 vmin=-1, vmax=1, center=0, square=True,
                 linewidths=0.5, linecolor='white', ax=ax,
-                annot_kws={'size': 12},
+                annot_kws={'size': 11},
                 cbar_kws={'label': 'Pearson Correlation', 'shrink': 0.8})
 
     ax.set_title('DPV Feature & Biomarker Correlation Heatmap', fontsize=20, fontweight='bold', pad=15)
@@ -750,7 +752,7 @@ def create_model_performance_bar_chart(results, save_dir="../figure"):
 
 def create_roc_curves_enhanced(results, y_val, save_dir="../figure"):
     """Create enhanced ROC curves with confidence intervals and annotations."""
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(13, 7))
 
     colors_roc = PALETTE[:6]
 
@@ -895,7 +897,7 @@ def create_feature_importance_map(trained_models, feature_columns, save_dir="../
 
 def create_pr_curves(results, y_val, save_dir="../figure"):
     """Figure 2 companion: Precision-Recall curves for all models (across CV folds)."""
-    fig, ax = plt.subplots(figsize=(12, 8), dpi=300)
+    fig, ax = plt.subplots(figsize=(13, 7), dpi=300)
     colors = PALETTE[:6]
 
     for idx, (name, result) in enumerate(results.items()):
@@ -1000,10 +1002,13 @@ def create_shap_plot(trained_models, feature_columns, X_scaled, y_true, save_dir
 
     mean_abs = np.mean(np.abs(shap_values), axis=0)
 
-    fig, ax = plt.subplots(figsize=(12, 6), dpi=300)
-    ax.bar(range(len(voltages)), mean_abs, color='#2b5c8f', alpha=0.85, width=1.0)
+    # Plot bars on the voltage axis so windows and bars share the same coordinate space
+    bar_width = voltages[1] - voltages[0] if len(voltages) > 1 else 1.0
 
-    # Shaded biomarker windows (legend placed outside plot to avoid tangling)
+    fig, ax = plt.subplots(figsize=(12, 6), dpi=300)
+    ax.bar(voltages, mean_abs, color='#2b5c8f', alpha=0.85, width=bar_width * 0.9)
+
+    # Shaded biomarker windows on the same voltage axis
     ax.axvspan(-468, -448, color='#2ca02c', alpha=0.18)
     ax.axvspan(365, 385, color='#ff7f0e', alpha=0.18)
     ax.axvspan(958, 978, color='#9467bd', alpha=0.18)
@@ -1014,13 +1019,16 @@ def create_shap_plot(trained_models, feature_columns, X_scaled, y_true, save_dir
                                   (958, 978, 'CA125 Window', '#9467bd')]:
         mid = (x0 + x1) / 2
         ax.text(mid, ax.get_ylim()[1] * 0.97, text, ha='center', va='top',
-                fontsize=12, fontweight='bold', color=color)
+                fontsize=11, fontweight='bold', color=color)
 
-    ax.set_xticks(np.linspace(0, len(voltages) - 1, 9))
-    ax.set_xticklabels([f'{voltages[int(t)]:.0f}' for t in np.linspace(0, len(voltages) - 1, 9)], fontsize=12)
+    # Nicer tick positions on the voltage axis (9 evenly spaced voltage labels)
+    tick_positions = np.linspace(voltages[0], voltages[-1], 9)
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels([f'{v:.0f}' for v in tick_positions], fontsize=12)
     ax.set_xlabel('Applied Potential E (mV)', fontsize=14)
     ax.set_ylabel('Mean |SHAP Value|', fontsize=14)
-    ax.set_title(f'SHAP Feature Importance Map ({model_name}) — PSA Redox Window Dominance', fontsize=16, pad=12)
+    # ax.set_title(f'SHAP Feature Importance Map ({model_name}) — PSA Redox Window Dominance', fontsize=16, pad=12)
+    ax.set_title('SHAP Feature Importance Map — PSA Redox Window Dominance', fontsize=16, pad=12)
     ax.grid(alpha=0.3, axis='y', linestyle='--')
     fig.tight_layout()
     fig.savefig(os.path.join(save_dir, 'shap_importance.png'))
@@ -1337,3 +1345,12 @@ def run_complete_pipeline():
 
 if __name__ == "__main__":
     trained_models, results, y_val = run_complete_pipeline()
+
+    # Quantitative multi-biomarker regression (P1-P10) - the central experiment.
+    # Engineering features are regenerated first, then the regression pipeline
+    # reads the new feature file (data_with_features_engineered.csv).
+    print("\n" + "=" * 70)
+    print("QUANTITATIVE MULTI-BIOMARKER REGRESSION (PSA / AFP / CA125)")
+    print("=" * 70)
+    feature_extraction.main()
+    regression_pipeline.main()
