@@ -274,13 +274,6 @@ function App() {
                       fetchStatus()
                     }}
                   />
-                  <ForensicInput
-                    inputs={inputs}
-                    onInputChange={handleInputChange}
-                    onPredict={handlePredict}
-                    loading={loading}
-                    disabled={!artifactFiles.some(f => f.synced) || isSyncing}
-                  />
                 </div>
               </div>
             )}
@@ -621,6 +614,13 @@ function App() {
           </div>
         </main>
       </div>
+      <ForensicInput
+        inputs={inputs}
+        onInputChange={handleInputChange}
+        onPredict={handlePredict}
+        loading={loading}
+        disabled={engineStatus !== 'ready'}
+      />
       <ChatBot appState={{ activeTab, engineStatus, inputs, prediction, metrics, counterfactualData, shapData, importanceData }} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
