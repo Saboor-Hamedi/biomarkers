@@ -14,15 +14,6 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), "analysis", "figure")
 
-# Ensure cnn_model module is importable for pickle deserialization
-try:
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    from torch_geometric.nn import GCNConv, global_mean_pool
-except ImportError:
-    pass
-
 app = FastAPI(title="Biomarker AI Engine")
 
 # Enable CORS for Electron Renderer
@@ -88,14 +79,24 @@ def get_latest_mtime():
 
 def load_artifacts():
     global _cached_models, _cached_scaler, _cached_feature_columns, _last_artifact_mtime
-    
+
     current_mtime = get_latest_mtime()
     if current_mtime == 0:
         return None, None, None
-        
+
     # Return from cache if models are already loaded and haven't been modified
     if _cached_models is not None and current_mtime == _last_artifact_mtime:
         return _cached_models, _cached_scaler, _cached_feature_columns
+
+    # Lazy import: torch/torch_geometric are slow (~35s) and only needed to
+    # deserialize the neural models, so don't pay that cost at server startup.
+    try:
+        import torch
+        import torch.nn as nn
+        import torch.nn.functional as F
+        from torch_geometric.nn import GCNConv, global_mean_pool
+    except ImportError:
+        pass
 
     models = {}
     scaler = None

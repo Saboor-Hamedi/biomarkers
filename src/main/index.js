@@ -4,27 +4,55 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { spawn } from 'child_process'
 import fs from 'fs'
+import { cpSync, existsSync } from 'fs'
 
 let pyProcess = null
 let serverReady = false
 
-async function waitForServer(timeoutMs = 60000) {
-  const started = Date.now()
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const res = await fetch('http://127.0.0.1:8001/audit')
-      if (res.ok) {
-        serverReady = true
-        console.log('Biomarker server is ready.')
-        return true
-      }
-    } catch (err) {
-      // Not ready yet — keep polling
-    }
-    await new Promise(resolve => setTimeout(resolve, 1000))
+// Production: the bundled `server/` ships unpacked in resources/server.
+// Python cannot open files inside app.asar, and the models dir must be writable,
+// so we seed a writable runtime copy under userData on first launch.
+function getServerDir() {
+  if (is.dev) return join(app.getAppPath(), 'server')
+
+  const bundledDir = join(process.resourcesPath, 'server')
+  const runtimeDir = join(app.getPath('userData'), 'server')
+  if (!existsSync(runtimeDir)) {
+    cpSync(bundledDir, runtimeDir, { recursive: true })
   }
-  console.error('Biomarker server did not become ready in time.')
-  return false
+  return runtimeDir
+}
+
+function waitForServer(proc, timeoutMs = 120000) {
+  return new Promise((resolve) => {
+    const started = Date.now()
+    let done = false
+    const finish = (ok) => {
+      if (done) return
+      done = true
+      clearInterval(interval)
+      resolve(ok)
+    }
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:8001/audit')
+        if (res.ok) {
+          serverReady = true
+          console.log('Biomarker server is ready.')
+          finish(true)
+          return
+        }
+      } catch (err) {
+        // Not ready yet — keep polling
+      }
+      if (Date.now() - started > timeoutMs) {
+        console.error('Biomarker server did not become ready in time.')
+        finish(false)
+      }
+    }, 1000)
+    proc.on('exit', () => finish(false))
+    proc.on('error', () => finish(false))
+  })
 }
 
 async function startPythonServer() {
@@ -36,14 +64,43 @@ async function startPythonServer() {
   } catch (err) {
     // Ignore errors if server wasn't running
   }
-  
-  const script = join(__dirname, '../../server/main.py')
-  pyProcess = spawn('python', [script])
-  pyProcess.stdout.on('data', (data) => console.log(`Python: ${data}`))
-  pyProcess.stderr.on('data', (data) => console.error(`Python Error: ${data}`))
 
-  // Wait until the server actually responds so the UI never sees "failed to fetch"
-  await waitForServer()
+  const script = join(getServerDir(), 'main.py')
+  const pythonCandidates = process.platform === 'win32' ? ['python', 'py'] : ['python3', 'python']
+
+  for (const pyCmd of pythonCandidates) {
+    let spawnError = null
+    const proc = spawn(pyCmd, [script], { windowsHide: true })
+    proc.on('error', (err) => {
+      spawnError = err
+      console.error(`Failed to start ${pyCmd}: ${err.message}`)
+    })
+    proc.stdout.on('data', (data) => console.log(`Python: ${data}`))
+    proc.stderr.on('data', (data) => console.error(`Python Error: ${data}`))
+    proc.on('exit', (code, signal) => {
+      if (pyProcess === proc) pyProcess = null
+      console.log(`Python exited: code=${code} signal=${signal}`)
+    })
+
+    // Wait until the server actually responds so the UI never sees "failed to fetch"
+    const ready = await waitForServer(proc)
+    if (ready) {
+      pyProcess = proc
+      console.log(`Biomarker server started with ${pyCmd}`)
+      return
+    }
+
+    // Command not found → try the next interpreter. Otherwise it ran but never
+    // came up (missing deps, port conflict) → don't retry the same thing.
+    if (spawnError) {
+      console.error(`Could not launch ${pyCmd}: ${spawnError.message}`)
+      continue
+    }
+    if (proc.exitCode === null) proc.kill()
+    break
+  }
+
+  console.error('Biomarker server could not be started (is Python + dependencies installed?).')
 }
 
 function createWindow() {
@@ -102,9 +159,9 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC: Synchronize Artifacts — copies .pkl files to server/analysis/models/
+  // IPC: Synchronize Artifacts — copies .pkl files into the writable models dir
   ipcMain.handle('sync-artifacts', async (event, filePaths) => {
-    const destDir = join(app.getAppPath(), 'server', 'analysis', 'models')
+    const destDir = join(getServerDir(), 'analysis', 'models')
     if (!fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true })
     }
@@ -149,7 +206,9 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  startPythonServer().then(() => createWindow())
+  // Show the window immediately; start the Python server in the background
+  createWindow()
+  startPythonServer()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

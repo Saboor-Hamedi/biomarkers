@@ -1,11 +1,11 @@
 import React from 'react'
 import AnalyticView from './AnalyticView'
 import { ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, BarChart, Bar } from 'recharts'
-import { Target, BarChart as BarChartIcon, Image as ImageIcon } from 'lucide-react'
+import { Target, BarChart as BarChartIcon, Image as ImageIcon, RefreshCw } from 'lucide-react'
 
-function FigureCard({ name }) {
+function FigureCard({ name, version = 0 }) {
   const [error, setError] = React.useState(false)
-  const src = `http://127.0.0.1:8001/figures/${name}`
+  const src = `http://127.0.0.1:8001/figures/${name}?v=${version}`
   return (
     <figure className="bg-[#0a0e14] border border-gray-800 rounded-lg overflow-hidden shadow-[0_0_25px_rgba(37,99,235,0.08)]">
       {error ? (
@@ -39,6 +39,8 @@ const CalibrationRiskDist = ({ activeTab, calibrationRiskData }) => {
     'Figure3_Feature_Importance_Map.png',
     'shap_importance.png'
   ]
+  // Bump to force a re-fetch of every figure (clears stuck "unavailable" errors)
+  const [figureRefresh, setFigureRefresh] = React.useState(0)
 
   if (activeTab !== 'calibration-risk') return null
 
@@ -77,13 +79,22 @@ const CalibrationRiskDist = ({ activeTab, calibrationRiskData }) => {
         {/* Publication Figure Gallery */}
         {gallery.length > 0 && (
           <div className="space-y-4 mb-8">
-            <p className="text-[9px] font-black tracking-[0.2em] text-blue-500 flex items-center gap-2">
-              <ImageIcon size={12} className="text-blue-500" />
-              Publication Figures
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-[9px] font-black tracking-[0.2em] text-blue-500 flex items-center gap-2">
+                <ImageIcon size={12} className="text-blue-500" />
+                Publication Figures
+              </p>
+              <button
+                onClick={() => setFigureRefresh((v) => v + 1)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[8px] font-black tracking-[0.2em] bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)]"
+              >
+                <RefreshCw size={9} />
+                Refresh
+              </button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {gallery.map((f) => (
-                <FigureCard key={f} name={f} />
+                <FigureCard key={`${f}-${figureRefresh}`} name={f} version={figureRefresh} />
               ))}
             </div>
           </div>
