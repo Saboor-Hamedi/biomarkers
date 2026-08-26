@@ -5,9 +5,11 @@ import icon from '../../resources/icon.png?asset'
 import { spawn } from 'child_process'
 import fs from 'fs'
 import { cpSync, existsSync } from 'fs'
+import { autoUpdater } from 'electron-updater'
 
 let pyProcess = null
 let serverReady = false
+let mainWindow = null
 
 // Production: the bundled `server/` ships unpacked in resources/server.
 // Python cannot open files inside app.asar, and the models dir must be writable,
@@ -103,8 +105,41 @@ async function startPythonServer() {
   console.error('Biomarker server could not be started (is Python + dependencies installed?).')
 }
 
+// ── Auto-update ──────────────────────────────────────────────────────────────
+function sendUpdateStatus(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app-update-status', payload)
+  }
+}
+
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => sendUpdateStatus({ type: 'checking' }))
+  autoUpdater.on('update-available', (info) =>
+    sendUpdateStatus({ type: 'available', version: info.version })
+  )
+  autoUpdater.on('update-not-available', () => sendUpdateStatus({ type: 'not-available' }))
+  autoUpdater.on('error', (err) =>
+    sendUpdateStatus({ type: 'error', message: err ? err.message : 'Unknown error' })
+  )
+  autoUpdater.on('download-progress', (progress) =>
+    sendUpdateStatus({
+      type: 'progress',
+      percent: Math.round(progress.percent),
+      transferred: progress.transferred,
+      total: progress.total,
+      bytesPerSecond: progress.bytesPerSecond
+    })
+  )
+  autoUpdater.on('update-downloaded', (info) =>
+    sendUpdateStatus({ type: 'downloaded', version: info.version })
+  )
+}
+
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
@@ -115,6 +150,10 @@ function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
     }
+  })
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -206,9 +245,42 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  // Show the window immediately; start the Python server in the background
+  // ── Auto-update IPC ─────────────────────────────────────────────────────────
+  ipcMain.handle('app-update-check', async () => {
+    try {
+      await autoUpdater.checkForUpdates()
+      return { status: 'ok' }
+    } catch (err) {
+      return { status: 'error', message: err.message }
+    }
+  })
+
+  ipcMain.handle('app-update-download', async () => {
+    try {
+      await autoUpdater.downloadUpdate()
+      return { status: 'ok' }
+    } catch (err) {
+      return { status: 'error', message: err.message }
+    }
+  })
+
+  ipcMain.on('app-update-restart', () => {
+    // Make sure the Python server is stopped before the installer replaces the app
+    if (pyProcess) {
+      pyProcess.kill()
+      pyProcess = null
+    }
+    setTimeout(() => autoUpdater.quitAndInstall(), 300)
+  })
+
+  setupAutoUpdater()
   createWindow()
   startPythonServer()
+
+  // Silently check for updates in the background (packaged builds only)
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdates()
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

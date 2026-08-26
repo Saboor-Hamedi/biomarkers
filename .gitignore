@@ -12,6 +12,8 @@ __pycache__/
 # Local notes / working documents
 result.md
 report.md
+talk.md
+results.md
 
 # Trained model artifacts
 *.pkl
