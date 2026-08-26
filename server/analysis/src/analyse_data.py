@@ -328,7 +328,7 @@ def create_best_model_summary_table(results, save_dir="../figure"):
     print(f"  • F1-Score: {best_model['F1-Score (%)']:.2f}%")
     print(f"  • ROC-AUC: {best_model['ROC-AUC (%)']:.2f}%")
     print(f"  • PR-AUC: {best_model['PR-AUC (%)']:.2f}%")
-    print("\nModel performance table (percentages):")
+    print("Model performance table (percentages):")
     print(summary_df.to_string(index=False, float_format='%.2f'))
 
     # CSV export removed — results shown on console only
@@ -352,17 +352,16 @@ def create_best_model_modal(results, save_dir="../figure"):
     title = f"Highest Scoring Model: {best_model_name}"
     subtitle = "Top performance across validation metrics"
 
-    ax.text(0.02, 0.9, title, fontsize=24, fontweight='bold', color='#1F2937', va='top')
-    ax.text(0.02, 0.82, subtitle, fontsize=14, color='#4B5563', va='top')
+    ax.text(0.02, 0.9, title, va='top')
+    ax.text(0.02, 0.82, subtitle, va='top')
 
     for i, (label, value) in enumerate(zip(display_labels, best_values)):
         y = 0.65 - i * 0.12
-        ax.text(0.05, y, f"{label}", fontsize=16, fontweight='bold', color='#111827', va='center')
-        ax.text(0.85, y, f"{value * 100:.2f}%", fontsize=16, fontweight='bold', color='#0B6E99', va='center', ha='right')
-        ax.hlines(y - 0.02, 0.05, 0.95, color='#D1D5DB', linewidth=1, alpha=0.5)
+        ax.text(0.05, y, f"{label}", va='center')
+        ax.text(0.85, y, f"{value * 100:.2f}%", va='center', ha='right')
+        ax.hlines(y - 0.02, 0.05, 0.95, linewidth=1, alpha=0.5)
 
-    ax.text(0.02, 0.08, "This figure highlights only the best performing model based on F1 score, providing a concise single-model summary.",
-            fontsize=11, color='#6B7280', va='bottom')
+    ax.text(0.02, 0.08, "This figure highlights only the best performing model based on F1 score, providing a concise single-model summary.", va='bottom')
 
     plt.tight_layout()
     path = os.path.join(save_dir, 'best_model_modal.png')
@@ -381,115 +380,36 @@ def create_best_model_modal(results, save_dir="../figure"):
 # ============================================================================
 
 def create_advanced_confusion_matrix(y_true, y_pred, model_name, save_dir="../figure"):
-    """Create unique confusion matrix visualizations for each model with different styles."""
     os.makedirs(save_dir, exist_ok=True)
     cm = confusion_matrix(y_true, y_pred)
     cm_percentage = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
 
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Use standard seaborn heatmap for ALL models
+    cmap = 'Blues'
+    
+    sns.heatmap(
+        cm,
+        annot=np.array([[f'{cm[i, j]}\n({cm_percentage[i, j]:.1f}%)' for j in range(2)] for i in range(2)]),
+        fmt='',
+        cmap=cmap,
+        xticklabels=['Low Risk', 'High Risk'],
+        yticklabels=['Low Risk', 'High Risk'],
+        ax=ax,
+        cbar_kws={'label': 'Count', 'shrink': 0.8},
+        square=True,
+        linewidths=2,
+        linecolor='white',
+        annot_kws={'size': 14}
+    )
 
-    # Different style based on model
-    if model_name == 'Logistic Regression':
-        # Style 1: Circular bubbles
-        colors = MODEL_COLORS[model_name]['gradient']
-        max_val = cm.max()
-        for i in range(2):
-            for j in range(2):
-                size = (cm[i, j] / max_val) * 3000
-                circle = plt.Circle((j, i), radius=np.sqrt(size)/20,
-                                   color=colors[min(int(cm[i, j]/max_val*len(colors)), len(colors)-1)],
-                                   alpha=0.7, ec='black', linewidth=2)
-                ax.add_patch(circle)
-                ax.text(j, i, f'{cm[i, j]}\n({cm_percentage[i, j]:.1f}%)',
-                       ha='center', va='center', fontsize=18, fontweight='bold')
-
-        ax.set_xlim(-0.5, 1.5)
-        ax.set_ylim(-0.5, 1.5)
-        ax.set_xticks([0, 1])
-        ax.set_yticks([0, 1])
-        ax.set_xticklabels(['Low Risk', 'High Risk'], fontsize=16)
-        ax.set_yticklabels(['Low Risk', 'High Risk'], fontsize=16)
-        ax.set_xlabel('Predicted', fontsize=16, fontweight='bold')
-        ax.set_ylabel('Actual', fontsize=16, fontweight='bold')
-        ax.set_title(f'{model_name}\nBubble Confusion Matrix', fontsize=18, fontweight='bold', pad=20)
-        ax.grid(False)
-
-    elif model_name == 'Random Forest':
-        # Style 2: Gradient heatmap with custom annotations
-        sns.heatmap(cm, annot=False, fmt='d', cmap=MODEL_COLORS[model_name]['heatmap'],
-                   xticklabels=['Low Risk', 'High Risk'],
-                   yticklabels=['Low Risk', 'High Risk'],
-                   ax=ax, cbar_kws={'label': 'Count', 'shrink': 0.8},
-                   square=True, linewidths=2, linecolor='white')
-
-        for i in range(2):
-            for j in range(2):
-                color = 'white' if cm[i, j] > cm.max()/2 else 'black'
-                ax.text(j+0.5, i+0.5, f'{cm[i, j]}\n({cm_percentage[i, j]:.1f}%)',
-                       ha='center', va='center', fontsize=17, fontweight='bold', color=color)
-
-        ax.set_xlabel('Predicted', fontsize=16, fontweight='bold')
-        ax.set_ylabel('Actual', fontsize=16, fontweight='bold')
-        ax.set_xticklabels(ax.get_xticklabels(), fontsize=15)
-        ax.set_yticklabels(ax.get_yticklabels(), fontsize=15)
-        ax.set_title(f'{model_name}\nGradient Confusion Matrix', fontsize=18, fontweight='bold', pad=20)
-
-    elif model_name == 'SVM':
-        # Style 3: Donut chart style
-        from matplotlib.patches import Wedge
-
-        total = cm.sum()
-        angles = [0]
-        current = 0
-        for i in range(2):
-            for j in range(2):
-                current += cm[i, j]
-                angles.append(360 * current / total)
-
-        colors_donut = ['#1f77b4', '#ff7f0e', '#17becf', '#2ca02c']
-        labels = ['True Negatives', 'False Positives', 'False Negatives', 'True Positives']
-
-        for i in range(4):
-            wedge = Wedge((0.5, 0.5), 0.4, angles[i], angles[i+1],
-                         facecolor=colors_donut[i], edgecolor='white', linewidth=3)
-            ax.add_patch(wedge)
-            mid_angle = np.radians((angles[i] + angles[i+1]) / 2)
-            label_radius = 0.29
-            label_x = 0.5 + label_radius * np.cos(mid_angle)
-            label_y = 0.5 + label_radius * np.sin(mid_angle)
-            ax.text(label_x, label_y,
-                   f'{labels[i]}\n{cm.flatten()[i]}\n({cm_percentage.flatten()[i]:.1f}%)',
-                   ha='center', va='center', fontsize=13, fontweight='bold', color='white')
-
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.set_aspect('equal')
-        ax.set_title(f'{model_name}\nDonut Confusion Matrix', fontsize=18, fontweight='bold', pad=20)
-        ax.axis('off')
-
-    else:  # XGBoost
-        # Style 4: Purple gradient heatmap for clarity
-        sns.heatmap(
-            cm,
-            annot=np.array([[f'{cm[i, j]}\n({cm_percentage[i, j]:.1f}%)' for j in range(2)] for i in range(2)]),
-            fmt='',
-            cmap='Purples',
-            xticklabels=['Low Risk', 'High Risk'],
-            yticklabels=['Low Risk', 'High Risk'],
-            ax=ax,
-            cbar_kws={'label': 'Count', 'shrink': 0.8},
-            square=True,
-            linewidths=2,
-            linecolor='white',
-            annot_kws={"fontsize": 16, "fontweight": "bold"}
-        )
-
-        ax.set_title(f'{model_name}\nPurple Heatmap Confusion Matrix', fontsize=18, fontweight='bold', pad=20)
-        ax.set_xlabel('Predicted', fontsize=16, fontweight='bold')
-        ax.set_ylabel('Actual', fontsize=16, fontweight='bold')
-        ax.set_xticklabels(ax.get_xticklabels(), fontsize=15)
-        ax.set_yticklabels(ax.get_yticklabels(), fontsize=15)
-        ax.grid(False)
+    ax.set_title(f'{model_name}\nConfusion Matrix')
+    ax.set_xlabel('Predicted')
+    ax.set_ylabel('Actual')
+    ax.set_xticklabels(ax.get_xticklabels())
+    ax.set_yticklabels(ax.get_yticklabels())
+    ax.grid(False)
 
     plt.tight_layout()
     plt.savefig(f"{save_dir}/advanced_cm_{model_name.lower().replace(' ', '_')}.png",
@@ -518,13 +438,12 @@ def create_radar_chart(results, save_dir="../figure"):
         ax.fill(angles, values, alpha=0.06, color=color)
 
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(metrics, fontsize=14, fontweight='bold')
+    ax.set_xticklabels(metrics)
     ax.set_ylim(0, 1)
     ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
-    ax.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'], fontsize=11)
-    ax.set_title('Model Performance Radar Chart\nComprehensive Comparison',
-                fontsize=18, fontweight='bold', pad=30)
-    ax.legend(loc='upper right', bbox_to_anchor=(1.25, 1.12), fontsize=13, framealpha=0.95)
+    ax.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'])
+    ax.set_title('Model Performance Radar Chart\nComprehensive Comparison')
+    ax.legend(loc='upper right', bbox_to_anchor=(1.25, 1.12), framealpha=0.95)
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
@@ -566,11 +485,10 @@ def create_parallel_coordinates(results, y_val, save_dir="../figure"):
                label=f'{label} (Mean)', marker='o', markersize=8)
 
     ax.set_xticks(range(n_models))
-    ax.set_xticklabels(model_names, rotation=45, ha='right', fontsize=13)
-    ax.set_ylabel('Prediction Probability', fontsize=15, fontweight='bold')
-    ax.set_title('Model Predictions Parallel Coordinates\nHow Models Behave Across Samples',
-                fontsize=17, fontweight='bold', pad=20)
-    ax.legend(loc='upper left', fontsize=12, framealpha=0.95)
+    ax.set_xticklabels(model_names, rotation=45, ha='right')
+    ax.set_ylabel('Prediction Probability')
+    ax.set_title('Model Predictions Parallel Coordinates\nHow Models Behave Across Samples')
+    ax.legend(loc='upper left', framealpha=0.95)
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.set_ylim(-0.05, 1.05)
 
@@ -580,103 +498,84 @@ def create_parallel_coordinates(results, y_val, save_dir="../figure"):
     print("  ✓ Saved: parallel_coordinates.png")
 
 def create_ridge_plot(results, y_val, save_dir="../figure"):
-    """Create ridge plot (joyplot) for probability distributions."""
-    fig, ax = plt.subplots(figsize=(13, 7))
-
-    models_list = list(results.keys())
-    colors_ridge = ['#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#17becf', '#7f7f7f']
-
-    for idx, (name, color) in enumerate(zip(models_list, colors_ridge)):
+    """Create ridge plot (joyplot) for probability distributions using Seaborn."""
+    
+    records = []
+    for name in results.keys():
         if results[name]['y_pred_proba'] is not None:
-            # Separate by true label
-            proba_low = results[name]['y_pred_proba'][y_val == 0]
-            proba_high = results[name]['y_pred_proba'][y_val == 1]
-
-            # KDE for low risk
-            if len(proba_low) > 1:
-                kde_low = gaussian_kde(proba_low)
-                x_range = np.linspace(0, 1, 100)
-                y_low = kde_low(x_range) / kde_low(x_range).max() + idx * 1.5
-                ax.fill_between(x_range, idx * 1.5, y_low, alpha=0.4, color=color)
-                ax.plot(x_range, y_low, color=color, linewidth=2)
-
-            # KDE for high risk
-            if len(proba_high) > 1:
-                kde_high = gaussian_kde(proba_high)
-                y_high = kde_high(x_range) / kde_high(x_range).max() + idx * 1.5 + 0.4
-                ax.fill_between(x_range, idx * 1.5 + 0.4, y_high, alpha=0.4, color=color, linestyle='--')
-                ax.plot(x_range, y_high, color=color, linewidth=2, linestyle='--')
-
-    ax.set_yticks([i * 1.5 + 0.7 for i in range(len(models_list))])
-    ax.set_yticklabels(models_list, fontsize=13, fontweight='bold')
-    ax.set_xlabel('Prediction Probability', fontsize=15, fontweight='bold')
-    ax.set_title('Model Prediction Distributions (Ridge Plot)\nSeparated by True Label',
-                fontsize=17, fontweight='bold', pad=20)
-    ax.grid(True, alpha=0.3, axis='x', linestyle='--')
-    ax.set_xlim(0, 1)
-
-    # Add legend
-    low_patch = mpatches.Patch(color='gray', alpha=0.4, label='Low Risk Distribution')
-    high_patch = mpatches.Patch(color='gray', alpha=0.4, label='High Risk Distribution', linestyle='--')
-    ax.legend(handles=[low_patch, high_patch], loc='upper right', fontsize=12)
-
-    plt.tight_layout()
+            for true_label, prob in zip(y_val, results[name]['y_pred_proba']):
+                records.append({'Model': name, 'True Label': 'High Risk' if true_label == 1 else 'Low Risk', 'Prediction Probability': prob})
+                
+    df_ridge = pd.DataFrame(records)
+    if len(df_ridge) == 0:
+        return
+        
+    # Use seaborn facet grid to simulate ridge plot
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+    
+    g = sns.FacetGrid(df_ridge, row="Model", hue="True Label", aspect=10, height=1.2, 
+                      palette={'Low Risk': '#2ca02c', 'High Risk': '#1f77b4'})
+    
+    g.map_dataframe(sns.kdeplot, x="Prediction Probability", fill=True, alpha=0.5, linewidth=2)
+    g.map_dataframe(sns.kdeplot, x="Prediction Probability", color="black", lw=1)
+    
+    # Pass axes to refline manually
+    for ax in g.axes.flat:
+        ax.axhline(y=0, lw=2, clip_on=False, color="black")
+    
+    # Label the model names on the left of each row (avoiding hue label tangling)
+    for ax, name in zip(g.axes.flat, g.row_names):
+        ax.text(0.01, 0.2, name, fontweight="bold", color="black",
+                ha="left", va="center", transform=ax.transAxes)
+                
+    g.set_titles("")
+    g.set(yticks=[], ylabel="")
+    g.despine(bottom=True, left=True)
+    g.fig.subplots_adjust(hspace=-0.25)
+    g.set_axis_labels("Prediction Probability", "")
+    g.fig.suptitle('Model Prediction Distributions (Ridge Plot)', y=1.02)
+    
+    # Add a custom legend for the hues since we cleared titles
+    g.add_legend(title='True Label', bbox_to_anchor=(0.95, 0.95))
+    
     plt.savefig(f"{save_dir}/ridge_plot_distributions.png", dpi=300, bbox_inches='tight')
     plt.close()
+    
+    # Reset seaborn theme to whitegrid for the rest of the script
+    sns.set_theme(style="whitegrid", font_scale=1.2)
     print("  ✓ Saved: ridge_plot_distributions.png")
 
 def create_violin_plots(results, y_val, save_dir="../figure"):
-    """Create beautiful violin plots for model predictions."""
-    fig, axes = plt.subplots(2, 3, figsize=(15, 8))
-    axes_flat = axes.flatten()
-
-    colors_violin = ['#2ca02c', '#1f77b4']
-
-    for idx, (name, ax) in enumerate(zip(results.keys(), axes_flat)):
+    """Create beautiful violin plots for model predictions using Seaborn."""
+    
+    # Gather data into a DataFrame for seaborn
+    records = []
+    for name in results.keys():
         if results[name]['y_pred_proba'] is not None:
-            # Prepare data
-            data_to_plot = [
-                results[name]['y_pred_proba'][y_val == 0],
-                results[name]['y_pred_proba'][y_val == 1]
-            ]
+            for true_label, prob in zip(y_val, results[name]['y_pred_proba']):
+                records.append({'Model': name, 'True Label': 'High Risk' if true_label == 1 else 'Low Risk', 'Prediction Probability': prob})
+    
+    df_violin = pd.DataFrame(records)
+    if len(df_violin) == 0:
+        return
+        
+    fig, ax = plt.subplots(figsize=(15, 8))
+    
+    sns.violinplot(
+        data=df_violin, 
+        x='Model', 
+        y='Prediction Probability', 
+        hue='True Label', 
+        split=True, 
+        inner='quartile',
+        palette={'Low Risk': '#2ca02c', 'High Risk': '#1f77b4'},
+        ax=ax,
+        linewidth=1.5
+    )
 
-            # Create violin plot
-            parts = ax.violinplot(data_to_plot, positions=[1, 2],
-                                 showmeans=True, showmedians=True, showextrema=True)
-
-            # Style the violins
-            for i, pc in enumerate(parts['bodies']):
-                pc.set_facecolor(colors_violin[i])
-                pc.set_alpha(0.7)
-                pc.set_edgecolor('black')
-                pc.set_linewidth(1.5)
-
-            # Style mean and median
-            parts['cmeans'].set_color('darkblue')
-            parts['cmeans'].set_linewidth(2)
-            parts['cmedians'].set_color('gold')
-            parts['cmedians'].set_linewidth(2)
-
-            # Add individual points (jitter)
-            for i, data in enumerate(data_to_plot):
-                x_jitter = np.random.normal(i+1, 0.04, size=len(data))
-                ax.scatter(x_jitter, data, alpha=0.3, s=20, color=colors_violin[i])
-
-            ax.set_xticks([1, 2])
-            ax.set_xticklabels(['Low Risk\n(Benign)', 'High Risk\n(Malignant)'], fontsize=13)
-            ax.set_ylabel('Prediction Probability', fontsize=13, fontweight='bold')
-            ax.set_title(f'{name}\nPrediction Distribution by True Label', fontsize=14, fontweight='bold')
-            ax.set_ylim(-0.05, 1.05)
-            ax.grid(True, alpha=0.3, axis='y', linestyle='--')
-
-            # Add statistical annotation
-            median_low = np.median(data_to_plot[0])
-            median_high = np.median(data_to_plot[1])
-            ax.text(1.5, 0.95, f'Median Diff: {abs(median_high - median_low):.3f}',
-                   ha='center', fontsize=12, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-
-    plt.suptitle('Model Prediction Distributions - Violin Plots',
-                fontsize=17, fontweight='bold', y=1.02)
+    ax.set_title('Model Prediction Distributions by True Label')
+    ax.set_ylim(-0.05, 1.05)
+    
     plt.tight_layout()
     plt.savefig(f"{save_dir}/violin_plots.png", dpi=300, bbox_inches='tight')
     plt.close()
@@ -697,18 +596,18 @@ def create_correlation_heatmap(df, save_dir="../figure", voltage_labels=None):
 
     corr_matrix = df[corr_cols].corr()
 
-    fig, ax = plt.subplots(figsize=(14, 8))
+    fig, ax = plt.subplots(figsize=(16, 10))
     sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='RdBu_r',
                 xticklabels=corr_labels, yticklabels=corr_labels,
                 vmin=-1, vmax=1, center=0, square=True,
                 linewidths=0.5, linecolor='white', ax=ax,
-                annot_kws={'size': 11},
+                annot_kws={'size': 8},
                 cbar_kws={'label': 'Pearson Correlation', 'shrink': 0.8})
 
-    ax.set_title('DPV Feature & Biomarker Correlation Heatmap', fontsize=20, fontweight='bold', pad=15)
-    plt.xticks(rotation=45, ha='right', fontsize=13)
-    plt.yticks(fontsize=13)
-    ax.figure.axes[-1].set_ylabel('Pearson Correlation', fontsize=13)
+    ax.set_title('DPV Feature & Biomarker Correlation Heatmap')
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks()
+    ax.figure.axes[-1].set_ylabel('Pearson Correlation')
     plt.tight_layout()
     plt.savefig(f"{save_dir}/correlation_heatmap.png", dpi=300, bbox_inches='tight')
     plt.close()
@@ -726,23 +625,27 @@ def create_model_performance_bar_chart(results, save_dir="../figure"):
         for name in results
     }
     df = pd.DataFrame(chart_data, index=labels)
+    df.index.name = 'Metric'
+    df_reset = df.reset_index()
+    df_melt = df_reset.melt(id_vars='Metric', var_name='Model', value_name='Score')
 
-    fig, ax = plt.subplots(figsize=(14, 8))
-    df.plot(kind='bar', ax=ax, width=0.8)
+    fig, ax = plt.subplots(figsize=(16, 7))
+    sns.barplot(data=df_melt, x='Metric', y='Score', hue='Model', palette=PALETTE, edgecolor='black', linewidth=1, ax=ax)
 
-    ax.set_title('Model Performance Summary', fontsize=19, fontweight='bold', pad=18)
-    ax.set_ylabel('Score', fontsize=15, fontweight='bold')
-    ax.set_ylim(0, 1)
-    ax.set_xticklabels(labels, rotation=0, fontsize=14)
-    ax.legend(title='Model', fontsize=12, title_fontsize=13, loc='upper right')
+    ax.set_title('Model Performance Summary')
+    ax.set_ylabel('Score')
+    ax.set_ylim(0, 1.15)
+    ax.legend(title='Model', loc='upper right', bbox_to_anchor=(1.0, 1.0))
     ax.grid(axis='y', alpha=0.3, linestyle='--')
 
+    # Add percentages on bars
     for patch in ax.patches:
         height = patch.get_height()
-        if height is not None:
-            ax.annotate(f'{height:.2f}',
+        if height is not None and height > 0:
+            ax.annotate(f'{height*100:.1f}%',
                         (patch.get_x() + patch.get_width() / 2, height),
-                        ha='center', va='bottom', fontsize=10, xytext=(0, 4), textcoords='offset points')
+                        fontsize=9,
+                        ha='center', va='bottom', xytext=(0, 4), textcoords='offset points')
 
     plt.tight_layout()
     plt.savefig(f"{save_dir}/model_performance_summary.png", dpi=300, bbox_inches='tight')
@@ -777,10 +680,10 @@ def create_roc_curves_enhanced(results, y_val, save_dir="../figure"):
     # Plot diagonal
     ax.plot([0, 1], [0, 1], 'k--', label='Random Classifier', linewidth=2, alpha=0.7)
 
-    ax.set_xlabel('False Positive Rate (1 - Specificity)', fontsize=15, fontweight='bold')
-    ax.set_ylabel('True Positive Rate (Sensitivity)', fontsize=15, fontweight='bold')
-    ax.set_title('ROC Curves - Enhanced Comparison', fontsize=17, fontweight='bold', pad=20)
-    ax.legend(loc='lower right', fontsize=13, framealpha=0.95)
+    ax.set_xlabel('False Positive Rate (1 - Specificity)')
+    ax.set_ylabel('True Positive Rate (Sensitivity)')
+    ax.set_title('ROC Curves - Enhanced Comparison')
+    ax.legend(loc='lower right', framealpha=0.95)
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.set_xlim([-0.02, 1.02])
     ax.set_ylim([-0.02, 1.02])
@@ -790,7 +693,7 @@ def create_roc_curves_enhanced(results, y_val, save_dir="../figure"):
     best_auc = results[best_model]['roc_auc']
     interpretation = f"Best Model: {best_model}\nAUC = {best_auc:.3f}\nExcellent discrimination" if best_auc > 0.8 else "Moderate discrimination"
 
-    ax.text(0.02, 0.02, interpretation, transform=ax.transAxes, fontsize=12,
+    ax.text(0.02, 0.02, interpretation, transform=ax.transAxes,
            verticalalignment='bottom', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
 
     plt.tight_layout()
@@ -811,10 +714,10 @@ def create_dpv_fingerprint_plot(df, save_dir="../figure"):
     std_high = X[y == 1].std(axis=0)
 
     fig, ax = plt.subplots(figsize=(11, 6), dpi=300)
-    ax.plot(voltages, mean_low, label=f'Baseline Low-Risk Cohort (n={(y==0).sum()})', color='#1f77b4', linewidth=2)
-    ax.fill_between(voltages, mean_low - std_low, mean_low + std_low, color='#1f77b4', alpha=0.15)
-    ax.plot(voltages, mean_high, label=f'High-Risk Cohort (n={(y==1).sum()})', color='#9467bd', linewidth=2)
-    ax.fill_between(voltages, mean_high - std_high, mean_high + std_high, color='#9467bd', alpha=0.15)
+    ax.plot(voltages, mean_low, label=f'Baseline Low-Risk Cohort (n={(y==0).sum()})', linewidth=2)
+    ax.fill_between(voltages, mean_low - std_low, mean_low + std_low, alpha=0.15)
+    ax.plot(voltages, mean_high, label=f'High-Risk Cohort (n={(y==1).sum()})', linewidth=2)
+    ax.fill_between(voltages, mean_high - std_high, mean_high + std_high, alpha=0.15)
 
     peaks = [
         (-468, 'PSA Peak\n(-468 mV)', '#2ca02c', 'top'),
@@ -826,16 +729,14 @@ def create_dpv_fingerprint_plot(df, save_dir="../figure"):
     for volt, label, color, pos in peaks:
         ax.axvline(x=volt, color=color, linestyle='--', linewidth=1.5, alpha=0.8)
         if pos == 'top':
-            ax.text(volt + 15, ymax - 0.3, label, color=color, fontweight='bold',
-                    fontsize=12, verticalalignment='top')
+            ax.text(volt + 15, ymax - 0.3, label, color=color, verticalalignment='top')
         else:
-            ax.text(volt + 15, ymin + 0.3, label, color=color, fontweight='bold',
-                    fontsize=12, verticalalignment='bottom')
+            ax.text(volt + 15, ymin + 0.3, label, color=color, verticalalignment='bottom')
 
-    ax.set_xlabel('Applied Potential E (mV)', fontsize=14)
-    ax.set_ylabel('Differential Current i (μA)', fontsize=14)
-    ax.set_title('Multiplexed Voltammetric Fingerprints across Screening Cohorts', fontsize=16, pad=12)
-    ax.legend(loc='upper right', frameon=True, fontsize=13)
+    ax.set_xlabel('Applied Potential E (mV)')
+    ax.set_ylabel('Differential Current i (μA)')
+    ax.set_title('Multiplexed Voltammetric Fingerprints across Screening Cohorts')
+    ax.legend(loc='upper right', frameon=True)
     fig.tight_layout()
     fig.savefig(os.path.join(save_dir, 'Figure1_DPV_Fingerprints.png'))
     plt.close()
@@ -882,17 +783,65 @@ def create_feature_importance_map(trained_models, feature_columns, save_dir="../
                                   (365, 385, 'AFP Window', '#ff7f0e'),
                                   (958, 978, 'CA125 Window', '#9467bd')]:
         mid = (x0 + x1) / 2
-        ax.text(mid, ax.get_ylim()[1] * 0.97, text, ha='center', va='top',
-                fontsize=12, fontweight='bold', color=color)
+        ax.text(mid, ax.get_ylim()[1] * 0.97, text, ha='center', va='top', color=color)
 
-    ax.legend(loc='upper right', frameon=True, fontsize=12)
-    ax.set_xlabel('Applied Potential E (mV)', fontsize=14)
-    ax.set_ylabel('Feature Importance', fontsize=14)
-    ax.set_title('Feature Importance Map & Physical Redox Mapping', fontsize=16, pad=12)
+    ax.legend(loc='upper right', frameon=True)
+    ax.set_xlabel('Applied Potential E (mV)')
+    ax.set_ylabel('Feature Importance')
+    ax.set_title('Feature Importance Map & Physical Redox Mapping')
     fig.tight_layout()
     fig.savefig(os.path.join(save_dir, 'Figure3_Feature_Importance_Map.png'))
     plt.close()
     print(f"  ✓ Saved: Figure3_Feature_Importance_Map.png")
+
+
+def create_workflow_diagram(save_dir="../figure"):
+    """Figure 1: Overall biosensor + AI workflow diagram (graphical abstract)."""
+    fig, ax = plt.subplots(figsize=(18, 7), dpi=300)
+    ax.axis("off")
+
+    steps = [
+        ("1. Serum sample", "1,000 spiked samples\nknown PSA / AFP / CA125", "#1f77b4"),
+        ("2. Multiplexed electrode", "validated sensing surface\nfor PSA, AFP, CA125", "#2ca02c"),
+        ("3. DPV measurement", "potential sweep -750 to +1250 mV\n200 current points", "#ff7f0e"),
+        ("4. Digital fingerprint", "200-point current-potential\nvector per sample", "#9467bd"),
+        ("5. AI decoder", "regression hierarchy\nXGBoost best (multi-output)", "#17becf"),
+        ("6. Outputs", "PSA  |  AFP  |  CA125\nquantitative concentrations", "#7f7f7f"),
+    ]
+
+    n = len(steps)
+    box_w, box_h = 0.13, 0.5
+    gap = 0.025
+    start_x = 0.02
+
+    for i, (title, sub, color) in enumerate(steps):
+        x0 = start_x + i * (box_w + gap)
+        y0 = 0.28
+        box = plt.Rectangle((x0, y0), box_w, box_h, facecolor=color, edgecolor="white",
+                            linewidth=2, alpha=0.92, zorder=3)
+        ax.add_patch(box)
+        ax.text(x0 + box_w / 2, y0 + box_h - 0.07, title, ha="center", va="top", color="white", zorder=4, fontsize=11, fontweight='bold')
+        ax.text(x0 + box_w / 2, y0 + 0.12, sub, ha="center", va="center", color="white", zorder=4, fontsize=10)
+
+        if i < n - 1:
+            ax.annotate("", xy=(x0 + box_w + gap - 0.012, y0 + box_h / 2),
+                        xytext=(x0 + box_w + 0.012, y0 + box_h / 2),
+                        arrowprops=dict(arrowstyle="->", color="#333333", lw=2, zorder=5))
+
+    ax.text(0.5, 0.93, "AI-Assisted Decoding of Multiplexed Electrochemical Fingerprints",
+            ha="center", va="top")
+    ax.text(0.5, 0.86, "One DPV scan in -> PSA, AFP, and CA125 concentrations out",
+            ha="center", va="top")
+
+    ax.text(0.5, 0.18, "Optional secondary layer: PSA-threshold classification (4,000 pg/ml cutoff)",
+            ha="center", va="top", style="italic")
+
+    fig.tight_layout()
+    path = os.path.join(save_dir, "workflow_overview.png")
+    fig.savefig(path, bbox_inches="tight")
+    plt.close()
+    print(f"  ✓ Saved: workflow_overview.png")
+    return path
 
 
 def create_pr_curves(results, y_val, save_dir="../figure"):
@@ -911,10 +860,10 @@ def create_pr_curves(results, y_val, save_dir="../figure"):
 
     ax.axhline(y_val.values.mean(), color='k', linestyle='--', linewidth=1.5, alpha=0.6,
                label=f'Baseline (prevalence = {y_val.values.mean():.2f})')
-    ax.set_xlabel('Recall (Sensitivity)', fontsize=15)
-    ax.set_ylabel('Precision (Positive Predictive Value)', fontsize=15)
-    ax.set_title('Precision-Recall Curves — 5-Fold Cross-Validation', fontsize=17, pad=12)
-    ax.legend(loc='upper right', fontsize=13, framealpha=0.95)
+    ax.set_xlabel('Recall (Sensitivity)')
+    ax.set_ylabel('Precision (Positive Predictive Value)')
+    ax.set_title('Precision-Recall Curves — 5-Fold Cross-Validation')
+    ax.legend(loc='upper right', framealpha=0.95)
     ax.grid(alpha=0.3, linestyle='--')
     ax.set_xlim([-0.02, 1.02])
     ax.set_ylim([0, 1.05])
@@ -1018,17 +967,16 @@ def create_shap_plot(trained_models, feature_columns, X_scaled, y_true, save_dir
                                   (365, 385, 'AFP Window', '#ff7f0e'),
                                   (958, 978, 'CA125 Window', '#9467bd')]:
         mid = (x0 + x1) / 2
-        ax.text(mid, ax.get_ylim()[1] * 0.97, text, ha='center', va='top',
-                fontsize=11, fontweight='bold', color=color)
+        ax.text(mid, ax.get_ylim()[1] * 0.97, text, ha='center', va='top', color=color)
 
     # Nicer tick positions on the voltage axis (9 evenly spaced voltage labels)
     tick_positions = np.linspace(voltages[0], voltages[-1], 9)
     ax.set_xticks(tick_positions)
-    ax.set_xticklabels([f'{v:.0f}' for v in tick_positions], fontsize=12)
-    ax.set_xlabel('Applied Potential E (mV)', fontsize=14)
-    ax.set_ylabel('Mean |SHAP Value|', fontsize=14)
-    # ax.set_title(f'SHAP Feature Importance Map ({model_name}) — PSA Redox Window Dominance', fontsize=16, pad=12)
-    ax.set_title('SHAP Feature Importance Map — PSA Redox Window Dominance', fontsize=16, pad=12)
+    ax.set_xticklabels([f'{v:.0f}' for v in tick_positions])
+    ax.set_xlabel('Applied Potential E (mV)')
+    ax.set_ylabel('Mean |SHAP Value|')
+    # ax.set_title(f'SHAP Feature Importance Map ({model_name}) — PSA Redox Window Dominance')
+    ax.set_title('SHAP Feature Importance Map — PSA Redox Window Dominance')
     ax.grid(alpha=0.3, axis='y', linestyle='--')
     fig.tight_layout()
     fig.savefig(os.path.join(save_dir, 'shap_importance.png'))
@@ -1295,6 +1243,10 @@ def run_complete_pipeline():
     print("\n Creating feature importance map...")
     create_feature_importance_map(trained_models, feature_columns, "../figure")
 
+    # 7.13 Overall biosensor + AI workflow diagram (Figure 1 / graphical abstract)
+    print("\n Creating biosensor + AI workflow diagram...")
+    create_workflow_diagram("../figure")
+
     # 9. Find best model and print summary
     best_model_name = max(results, key=lambda x: results[x]['f1_score'])
 
@@ -1354,3 +1306,6 @@ if __name__ == "__main__":
     print("=" * 70)
     feature_extraction.main()
     regression_pipeline.main()
+
+
+    

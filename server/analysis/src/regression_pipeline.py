@@ -770,7 +770,11 @@ def plot_publication_figures(multi_df, rep_df, abla_df, shap_results, voltages):
     x = np.arange(len(piv.index))
     width = 0.26
     for k, b in enumerate(BIOMARKERS):
-        ax.bar(x + (k - 1) * width, piv[b], width, label=labels[b], color=colors[b], alpha=0.85)
+        bars = ax.bar(x + (k - 1) * width, piv[b], width, label=labels[b], color=colors[b], alpha=0.85, edgecolor='black', linewidth=1.2)
+        for bar in bars:
+            h = bar.get_height()
+            if h > 0:
+                ax.annotate(f'{h*100:.1f}%', (bar.get_x() + bar.get_width() / 2, h), ha='center', va='bottom', fontsize=10, xytext=(0, 4), textcoords='offset points')
     ax.set_xticks(x)
     ax.set_xticklabels(piv.index, rotation=15)
     ax.set_ylabel("R² (log₁₀ concentration)")
@@ -790,7 +794,11 @@ def plot_publication_figures(multi_df, rep_df, abla_df, shap_results, voltages):
     width = 0.26
     for k, b in enumerate(BIOMARKERS):
         vals = [rep_df[(rep_df["representation"] == r) & (rep_df["biomarker"] == b)]["R2"].mean() for r in reps]
-        ax.bar(x + (k - 1) * width, vals, width, label=labels[b], color=colors[b], alpha=0.85)
+        bars = ax.bar(x + (k - 1) * width, vals, width, label=labels[b], color=colors[b], alpha=0.85, edgecolor='black', linewidth=1.2)
+        for bar in bars:
+            h = bar.get_height()
+            if h > 0:
+                ax.annotate(f'{h*100:.1f}%', (bar.get_x() + bar.get_width() / 2, h), ha='center', va='bottom', fontsize=10, xytext=(0, 4), textcoords='offset points')
     ax.set_xticks(x)
     ax.set_xticklabels(reps, rotation=0)
     ax.set_ylabel("R² (log₁₀ concentration)")
@@ -808,7 +816,7 @@ def plot_publication_figures(multi_df, rep_df, abla_df, shap_results, voltages):
         ["PSA_region_only", "AFP_region_only", "CA125_region_only",
          "PSA+AFP", "PSA+CA125", "AFP+CA125", "All_three_regions", "Full_200_point"])
     fig, ax = plt.subplots(figsize=(14, 6), dpi=200)
-    bars = ax.bar(np.arange(len(avg)), avg.values, color="#1f77b4", alpha=0.85)
+    bars = ax.bar(np.arange(len(avg)), avg.values, color="#1f77b4", alpha=0.85, edgecolor='black', linewidth=1.2)
     bars[-1].set_color("#d62728")
     bars[-2].set_color("#ff7f0e")
     ax.set_xticks(np.arange(len(avg)))
@@ -818,7 +826,7 @@ def plot_publication_figures(multi_df, rep_df, abla_df, shap_results, voltages):
     ax.set_ylim(0, 1)
     ax.grid(alpha=0.3, axis="y")
     for i, v in enumerate(avg.values):
-        ax.text(i, v + 0.015, f"{v:.3f}", ha="center", fontsize=8)
+        ax.text(i, v + 0.015, f"{v*100:.1f}%", ha="center", fontsize=10)
     fig.tight_layout()
     fig.savefig(os.path.join(FIGURE_DIR, "P20C_ablation.png"))
     plt.close(fig)
