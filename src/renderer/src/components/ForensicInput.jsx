@@ -3,7 +3,7 @@ import { cn } from '../lib/utils'
 
 const ForensicInput = ({ onPredict, loading, disabled }) => {
   return (
-    <div className="fixed bottom-8 right-8 z-50 w-[450px] bg-[#0d1117]/90 backdrop-blur-md border border-gray-800 rounded-lg p-4 flex items-center justify-between shadow-2xl">
+    <div className="w-full bg-[#0d1117] border border-gray-800 rounded-lg p-3 flex items-center justify-between">
       <div className="flex flex-col gap-1">
         <h2 className="text-[9px] font-bold tracking-[0.2em] text-gray-500 flex items-center gap-2">
           <Activity size={12} className="text-blue-500" />
