@@ -11,6 +11,7 @@ import ChatBot from './components/ChatBot'
 import SettingsModal from './components/SettingsModal'
 import { Activity, TrendingUp, ShieldAlert, Search } from 'lucide-react'
 import { cn } from './lib/utils'
+import HumanAnatomyWorkspace from './components/3dhuman'
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -118,7 +119,7 @@ function App() {
     }
   }, [activeTab, fetchVisuals, tsneData])
 
-  const handlePredict = async () => {
+  const handlePredict = async (providedSampleId) => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
@@ -126,11 +127,12 @@ function App() {
     const signal = abortControllerRef.current.signal
 
     setLoading(true)
+    const finalSampleId = typeof providedSampleId === 'string' ? providedSampleId : inputs.sample_id;
     try {
       const response = await fetch('http://127.0.0.1:8001/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sample_id: inputs.sample_id }),
+        body: JSON.stringify({ sample_id: finalSampleId }),
         signal
       })
       const data = await response.json()
@@ -138,9 +140,9 @@ function App() {
       
       try {
         const [trajRes, shapRes, cfRes] = await Promise.all([
-          fetch('http://127.0.0.1:8001/trajectory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: inputs.sample_id }), signal }),
-          fetch('http://127.0.0.1:8001/shap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: inputs.sample_id }), signal }),
-          fetch('http://127.0.0.1:8001/counterfactual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: inputs.sample_id }), signal })
+          fetch('http://127.0.0.1:8001/trajectory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: finalSampleId }), signal }),
+          fetch('http://127.0.0.1:8001/shap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: finalSampleId }), signal }),
+          fetch('http://127.0.0.1:8001/counterfactual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sample_id: finalSampleId }), signal })
         ])
         const trajData = await trajRes.json()
         const shapDataJson = await shapRes.json()
@@ -225,8 +227,11 @@ function App() {
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
 
-        <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-          <div className="max-w-6xl mx-auto">
+        <main className={cn("flex-1 overflow-y-auto custom-scrollbar", activeTab !== 'anatomy' && activeTab !== 'dashboard' ? 'p-8' : '')}>
+          <div className={cn(activeTab !== 'anatomy' ? "max-w-6xl mx-auto" : "h-full w-full")}>
+            {activeTab === 'anatomy' && (
+              <HumanAnatomyWorkspace onPredict={handlePredict} loading={loading} />
+            )}
             {activeTab === 'dashboard' && (
               <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto pb-20">
                 <header className="flex items-center justify-between">
@@ -281,7 +286,7 @@ function App() {
             )}
 
             {activeTab === 'committee' && (
-              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500 p-3 max-w-5xl mx-auto w-full">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-black tracking-tight">
                     Committee Performance Audit
@@ -386,7 +391,7 @@ function App() {
             )}
 
             {activeTab === 'ranking' && (
-              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500 p-3 max-w-5xl mx-auto w-full">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     
@@ -514,7 +519,7 @@ function App() {
             )}
 
             {activeTab === 'registry' && (
-              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500 p-3 max-w-5xl mx-auto w-full">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-black tracking-tight">
                     Audit Registry Archive

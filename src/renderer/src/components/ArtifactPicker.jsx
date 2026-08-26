@@ -148,16 +148,15 @@ const ArtifactPicker = ({ onSync, files = [], setFiles, syncing, setSyncing, onP
           onDragLeave={onDragLeave}
           onDrop={onDrop}
           className={cn(
-            'relative border border-dashed rounded p-4 min-h-[60px] transition-all duration-200 flex flex-col items-center justify-center gap-1 shrink-0',
-            isDragging
-              ? 'border-blue-500 bg-blue-500/5'
-              : 'border-gray-800 bg-black/40 hover:border-gray-700'
+            'relative rounded-lg border border-dashed border-slate-700 bg-slate-900/20 p-8 text-center transition-all hover:border-sky-500/50 hover:bg-sky-500/5 cursor-pointer group flex flex-col items-center justify-center shrink-0 min-h-[120px]',
+            isDragging && 'border-sky-500 bg-sky-500/5'
           )}
         >
-          <Upload size={12} className="text-blue-500/50" />
-          <p className="text-[9px] font-bold text-gray-500 tracking-[0.2em] pointer-events-none">
-            Drop Models
-          </p>
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-slate-400 transition-colors group-hover:bg-sky-500/20 group-hover:text-sky-400">
+            <Upload className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-medium text-slate-300 pointer-events-none">Drop Model Files Here</p>
+          <p className="mt-1 text-xs text-slate-500 pointer-events-none">Supports .pkl formats</p>
           <input
             type="file"
             multiple
@@ -167,7 +166,7 @@ const ArtifactPicker = ({ onSync, files = [], setFiles, syncing, setSyncing, onP
           />
         </div>
 
-        <div className="min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 max-h-[150px]">
           {files.length > 0 ? (
             <div className="grid grid-cols-2 gap-1.5">
               {files.map((file, i) => (

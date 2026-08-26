@@ -20,7 +20,8 @@ import {
   LayoutGrid,
   Network,
   ListTree,
-  Users
+  Users,
+  Layers
 } from 'lucide-react'
 
 import SidebarHeader from './SidebarHeader'
@@ -30,19 +31,19 @@ const SidebarItem = memo(({ icon: Icon, label, active, collapsed, onClick }) => 
   <button
     onClick={onClick}
     className={cn(
-      "flex items-center w-full py-3 transition-all duration-200 group relative",
-      collapsed ? "justify-center px-0" : "px-4",
+      "group flex w-full items-center px-4 py-3 text-sm font-medium transition-all duration-200 border-r-2",
+      collapsed ? "justify-center px-0" : "gap-3",
       active 
-        ? "bg-blue-600/10 text-blue-500" 
-        : "text-gray-500 hover:bg-gray-800/40 hover:text-gray-300"
+        ? "bg-sky-500/10 text-sky-400 border-sky-500" 
+        : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 border-transparent"
     )}
   >
-    {active && (
-      <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.8)]" />
-    )}
-    <Icon size={16} className={cn("shrink-0", active ? "text-blue-500" : "group-hover:text-blue-400")} />
+    <Icon 
+      className={cn("shrink-0 transition-colors h-4 w-4", active ? "text-sky-400" : "text-slate-500 group-hover:text-slate-300")} 
+      strokeWidth={1.5}
+    />
     {!collapsed && (
-      <span className="ml-4 text-[12px] font-['Inter',_sans-serif] font-medium tracking-wide truncate">{label}</span>
+      <span className="font-['Inter',_sans-serif] tracking-wide truncate">{label}</span>
     )}
   </button>
 ))
@@ -63,6 +64,7 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
 
   const mainItems = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+    { id: 'anatomy', label: '3D Anatomy', icon: Layers },
     { id: 'committee', label: 'AI Committee', icon: BrainCircuit },
     { id: 'ranking', label: 'Patient Ranking', icon: Activity },
     { id: 'registry', label: 'Audit Registry', icon: Database },
@@ -87,7 +89,7 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
   return (
     <div 
       className={cn(
-        "h-screen bg-[#0d1117] border-r border-gray-800 flex flex-col transition-all duration-300",
+        "h-screen bg-[#070b12] border-r border-gray-800 flex flex-col transition-all duration-300",
         collapsed ? "w-16" : "w-56"
       )}
     >
@@ -119,7 +121,14 @@ const Sidebar = memo(({ activeTab, setActiveTab, onOpenSettings }) => {
         </div>
       </div>
 
-      <SidebarFooter collapsed={collapsed} onOpenSettings={onOpenSettings} />
+      <div className="border-t border-gray-800 pt-2 pb-2">
+        <SidebarItem
+          icon={Settings}
+          label="Settings"
+          collapsed={collapsed}
+          onClick={onOpenSettings}
+        />
+      </div>
     </div>
   )
 })

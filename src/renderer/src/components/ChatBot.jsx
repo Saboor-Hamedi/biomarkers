@@ -5,8 +5,7 @@ import { cn } from '../lib/utils';
 import { getSetting } from '../lib/settings';
 import { queryDeepSeek } from '../lib/deepseek';
 
-const ChatBot = ({ appState }) => {
-  const [isOpen, setIsOpen] = useState(false);
+const ChatBot = ({ appState, isOpen, onClose }) => {
   const [messages, setMessages] = useState([
     { role: 'bot', text: 'Forensic AI Assistant initialized. How can I help you analyze the current neural trajectory?' }
   ]);
@@ -55,16 +54,6 @@ const ChatBot = ({ appState }) => {
 
   return (
     <>
-      {/* Floating Action Button */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className={cn(
-          "fixed bottom-6 right-6 p-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all duration-300 z-50",
-          isOpen ? "scale-0 opacity-0 pointer-events-none" : "scale-100 opacity-100 hover:scale-110"
-        )}
-      >
-        <MessageSquare size={18} />
-      </button>
 
       {/* Chat Window */}
       <div 
@@ -81,7 +70,7 @@ const ChatBot = ({ appState }) => {
             <h3 className="text-sm font-black tracking-widest text-white">Forensic Co-Pilot</h3>
           </div>
           <button 
-            onClick={() => setIsOpen(false)}
+            onClick={onClose}
             className="text-gray-500 hover:text-white transition-colors p-1"
           >
             <X size={16} />

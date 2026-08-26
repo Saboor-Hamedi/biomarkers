@@ -218,8 +218,10 @@ app.whenReady().then(() => {
     return results
   })
 
-  // IPC: Reset Artifacts — clears UI state only, does NOT delete model files
+  // IPC: Reset Artifacts — clears UI state only, NEVER deletes model files
   ipcMain.handle('reset-artifacts', async () => {
+    // The user explicitly requested to never delete the .pkl models.
+    // This handler now solely exists to let the frontend wipe its UI state without touching the filesystem.
     return { status: 'success' }
   })
 

@@ -320,6 +320,10 @@ async def get_boundaries():
 
 @app.get("/heatmap")
 async def get_heatmap():
+    models, _, _ = load_artifacts()
+    if not models:
+        return []
+
     # Model performance heatmap: rows = metrics, columns = models (same data as /performance)
     summary_path = os.path.join(ARTIFACTS_DIR, "performance_summary.json")
     if os.path.exists(summary_path):
@@ -431,7 +435,8 @@ async def audit():
 @app.get("/figures")
 async def list_figures():
     """List the generated publication figures (PNG files)."""
-    if not os.path.exists(FIGURES_DIR):
+    models, _, _ = load_artifacts()
+    if not models or not os.path.exists(FIGURES_DIR):
         return []
     figures = [f for f in os.listdir(FIGURES_DIR) if f.endswith('.png')]
     return sorted(figures)
@@ -684,6 +689,10 @@ async def get_stats():
 @app.get("/performance")
 async def get_performance():
     try:
+        models, _, _ = load_artifacts()
+        if not models:
+            return {"error": "Engine offline."}
+
         # Read the persisted OOF metrics (same numbers as the terminal pipeline output)
         summary_path = os.path.join(ARTIFACTS_DIR, "performance_summary.json")
         if os.path.exists(summary_path):
