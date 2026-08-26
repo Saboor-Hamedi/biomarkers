@@ -227,35 +227,32 @@ function App() {
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
 
-        <main className={cn("flex-1 overflow-y-auto custom-scrollbar", activeTab !== 'anatomy' && activeTab !== 'dashboard' ? 'p-8' : '')}>
+        <main className={cn("flex-1 overflow-y-auto custom-scrollbar", activeTab !== 'anatomy' ? 'p-8' : '')}>
           <div className={cn(activeTab !== 'anatomy' ? "max-w-6xl mx-auto" : "h-full w-full")}>
             {activeTab === 'anatomy' && (
               <HumanAnatomyWorkspace onPredict={handlePredict} loading={loading} />
             )}
             {activeTab === 'dashboard' && (
-              <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto pb-20">
-                <header className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    
-                    <h1 className="text-base font-bold tracking-tight text-white">
-                      Forensic Overview
-                    </h1>
-                  </div>
+              <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl mx-auto pb-10">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-lg font-black tracking-tight">
+                    Forensic Overview
+                  </h2>
                   <button
                     onClick={handleReset}
-                    className="px-4 py-1.5 border border-red-900/30 text-red-500 text-[8px] font-bold tracking-widest rounded hover:bg-red-500 hover:text-white transition-all"
+                    className="text-[9px] bg-red-500/10 text-red-500 px-2 py-1 rounded border border-red-500/20 font-black tracking-widest hover:bg-red-500/20 transition-all cursor-pointer"
                   >
-                    Reset System
+                    RESET SYSTEM
                   </button>
-                </header>
+                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {stats.map((stat, i) => (
                     <StatCard key={i} {...stat} />
                   ))}
                 </div>
 
-                <div className="space-y-8">
+                <div className="space-y-4">
                   <ArtifactPicker
                     onSync={fetchStatus}
                     files={artifactFiles}
