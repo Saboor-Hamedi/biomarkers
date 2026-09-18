@@ -5,7 +5,8 @@ import { cn } from '../lib/utils';
 import { getSetting } from '../lib/settings';
 import { queryDeepSeek } from '../lib/deepseek';
 
-const ChatBot = ({ appState, isOpen, onClose }) => {
+const ChatBot = ({ appState }) => {
+  const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     { role: 'bot', text: 'Forensic AI Assistant initialized. How can I help you analyze the current neural trajectory?' }
   ]);
@@ -54,11 +55,21 @@ const ChatBot = ({ appState, isOpen, onClose }) => {
 
   return (
     <>
+      {/* Floating Toggle Button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "fixed bottom-6 right-6 z-[60] w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg",
+          isOpen ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-blue-600 text-white hover:bg-blue-500 hover:scale-105"
+        )}
+      >
+        {isOpen ? <X size={20} /> : <MessageSquare size={20} />}
+      </button>
 
       {/* Chat Window */}
       <div 
         className={cn(
-          "fixed bottom-6 right-6 w-80 sm:w-96 bg-[#0d1117] border border-gray-800 rounded-lg shadow-2xl flex flex-col transition-all duration-300 transform origin-bottom-right z-50",
+          "fixed bottom-24 right-6 w-80 sm:w-96 bg-[#0d1117] border border-gray-800 rounded-lg shadow-2xl flex flex-col transition-all duration-300 transform origin-bottom-right z-50",
           isOpen ? "scale-100 opacity-100" : "scale-0 opacity-0 pointer-events-none"
         )}
         style={{ height: '500px' }}
@@ -70,7 +81,7 @@ const ChatBot = ({ appState, isOpen, onClose }) => {
             <h3 className="text-sm font-black tracking-widest text-white">Forensic Co-Pilot</h3>
           </div>
           <button 
-            onClick={onClose}
+            onClick={() => setIsOpen(false)}
             className="text-gray-500 hover:text-white transition-colors p-1"
           >
             <X size={16} />
