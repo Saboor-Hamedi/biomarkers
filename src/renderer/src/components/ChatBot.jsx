@@ -58,8 +58,9 @@ const ChatBot = ({ appState }) => {
       {/* Floating Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        style={{ zIndex: 9999 }}
         className={cn(
-          "fixed bottom-6 right-6 z-[60] w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg",
+          "fixed bottom-6 right-6 w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg",
           isOpen ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-blue-600 text-white hover:bg-blue-500 hover:scale-105"
         )}
       >
@@ -68,11 +69,11 @@ const ChatBot = ({ appState }) => {
 
       {/* Chat Window */}
       <div 
+        style={{ height: '500px', zIndex: 9998 }}
         className={cn(
-          "fixed bottom-24 right-6 w-80 sm:w-96 bg-[#0d1117] border border-gray-800 rounded-lg shadow-2xl flex-col z-50",
+          "fixed bottom-24 right-6 w-80 sm:w-96 bg-[#0d1117] border border-gray-800 rounded-lg shadow-2xl flex-col",
           isOpen ? "flex" : "hidden"
         )}
-        style={{ height: '500px' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-black/40 rounded-t-lg">
