@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Bot, User } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import { cn } from '../lib/utils';
 import { getSetting } from '../lib/settings';
 import { queryDeepSeek } from '../lib/deepseek';
@@ -100,24 +99,10 @@ const ChatBot = ({ appState }) => {
                 {msg.role === 'user' ? <User size={12} /> : <Bot size={12} />}
               </div>
               <div className={cn(
-                "px-3 py-2 rounded-lg text-[11px] leading-relaxed max-w-[85%]",
+                "px-3 py-2 rounded-lg text-[11px] leading-relaxed max-w-[85%] whitespace-pre-wrap",
                 msg.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-[#0d1117] text-gray-300 border border-gray-800 rounded-tl-none"
               )}>
-                <ReactMarkdown
-                  components={{
-                    p: ({node, ...props}) => <p className="mb-1.5 last:mb-0" {...props} />,
-                    strong: ({node, ...props}) => <strong className={cn("font-bold", msg.role === 'user' ? "text-white" : "text-blue-400")} {...props} />,
-                    em: ({node, ...props}) => <em className={cn("italic", msg.role === 'user' ? "text-blue-100" : "text-gray-400")} {...props} />,
-                    ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5 marker:text-gray-600" {...props} />,
-                    ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5 marker:text-gray-600" {...props} />,
-                    li: ({node, ...props}) => <li {...props} />,
-                    code: ({node, inline, ...props}) => inline 
-                      ? <code className="bg-black/50 px-1 py-0.5 rounded font-mono text-[10px]" {...props} />
-                      : <code className="block bg-black/50 p-2 rounded font-mono text-[10px] mb-2 overflow-x-auto whitespace-pre custom-scrollbar" {...props} />
-                  }}
-                >
-                  {msg.text}
-                </ReactMarkdown>
+                {msg.text}
               </div>
             </div>
           ))}
