@@ -69,8 +69,8 @@ const ChatBot = ({ appState }) => {
       {/* Chat Window */}
       <div 
         className={cn(
-          "fixed bottom-24 right-6 w-80 sm:w-96 bg-[#0d1117] border border-gray-800 rounded-lg shadow-2xl flex flex-col transition-all duration-300 transform origin-bottom-right z-50",
-          isOpen ? "scale-100 opacity-100" : "scale-0 opacity-0 pointer-events-none"
+          "fixed bottom-24 right-6 w-80 sm:w-96 bg-[#0d1117] border border-gray-800 rounded-lg shadow-2xl flex-col z-50",
+          isOpen ? "flex" : "hidden"
         )}
         style={{ height: '500px' }}
       >
