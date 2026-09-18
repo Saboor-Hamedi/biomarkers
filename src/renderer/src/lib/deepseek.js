@@ -49,15 +49,14 @@ ${appState.prediction.models ? Object.entries(appState.prediction.models).map(([
   if (appState?.metrics) {
     // metrics is an object with {roc, pr, calibration, cm}
     // We'll extract the AUC scores for each model to provide context to the AI
-    const committeeSummary = Object.entries(appState.metrics.roc || {}).map(([name, data]) => ({
-      model: name,
-      auc: data.auc
-    }));
+    const committeeSummary = Object.entries(appState.metrics.roc || {}).map(([name, data]) => (
+      `- ${name}: ${data.auc}`
+    ));
 
     systemPrompt += `
 ### COMMITTEE PERFORMANCE METRICS ###
 The following is the live performance data of our underlying committee of models (AUC scores):
-${JSON.stringify(committeeSummary)}
+${committeeSummary.join('\n')}
 `;
   }
 
@@ -70,10 +69,13 @@ If the user asks "how do we lower the risk?" or "what if?", use this exact AI pr
   }
 
   if (appState?.shapData && appState.shapData.length > 0) {
+    const shapLines = appState.shapData.map(s => 
+      `- ${s.feature}: ${s.value} (Impact: ${s.impact > 0 ? '+' : ''}${s.impact.toFixed(4)})`
+    );
     systemPrompt += `
 ### SHAP WATERFALL PATIENT LOGIC ###
 These are the exact numerical impacts pulling the patient's risk up or down from the baseline:
-${JSON.stringify(appState.shapData)}
+${shapLines.join('\n')}
 `;
   }
 
@@ -81,7 +83,7 @@ ${JSON.stringify(appState.shapData)}
 ### STRICT FORMATTING INSTRUCTIONS FOR AI ###
 1. **LEAD WITH THE VERDICT**: Always begin your analysis by explicitly stating the main Risk Score, overall Verdict, and Consensus percentage. NEVER guess or hallucinate these numbers. If they are provided in the telemetry, use them exactly. If they are not provided, explicitly state that no prediction is loaded.
 2. **BE EXTREMELY CONCISE**: Limit your response to 2-3 short, punchy paragraphs. Do not write essays.
-3. **NO RAW DATA/JSON**: Never spit out raw JSON or massive data dumps. Translate the telemetry and numerical data into plain, clinical English bullet points.
+3. **NO RAW DATA/JSON**: Never spit out raw JSON, arrays, or massive data dumps about the database. Translate all numerical data into plain, highly polished, clinical English.
 4. **CLINICAL TONE**: Be highly professional and aggressively data-driven. Use strong verbs.
 5. **MARKDOWN ONLY**: Use bolding for key metrics (e.g., **99.5%**) and bullet points to make your analysis instantly scannable by a busy clinician.
 6. **DIRECT ANSWERS**: Do not use filler phrases like "Based on the provided telemetry...". Just answer the question immediately.
